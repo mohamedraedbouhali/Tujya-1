@@ -1,0 +1,179 @@
+# Tujya, the whole app in one command:
+#
+#   docker compose up -d --build
+#
+#   http://localhost:8080        web app (nginx: React build; /api, /docs, /openapi.json -> backend)
+#   http://localhost:8000/docs   API directly (Swagger)
+#   http://localhost:5000        MLflow UI          localhost:5432  PostgreSQL
+#   http://localhost:11434       Ollama (local LLM and embeddings, GPU if available)
+#   http://localhost:8001        ChromaDB (vector index of the RAG corpus, D76)
+#
+#   docker compose down          # keeps the volumes; `down -v` deletes them
+#
+# Strictly local (docs/INFRA.md): every published port is bound to 127.0.0.1, so nothing is
+# reachable from another machine. Inside the containers, servers listen on 0.0.0.0 only on
+# the private Docker network, which is what the 127.0.0.1 host ports forward to.
+#
+# Before the first start, on the host (docs/INFRA.md):
+#   - `dvc pull` or the data steps, so data/tujya/*.csv and data/vision/c3pi/images exist;
+#   - `python -m tujya_vision.publish` (vision venv) to fill models/ from the Model Registry.
+# `pharma-init` reloads the medicine tables from data/tujya on every start, then exits;
+# `rag-init` pulls the Ollama models (first start only) and indexes data/rag/corpus in the
+# `chroma` service.
+#
+# Credentials are development defaults; override them in the shell or in a compose
+# `.env` file (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, POSTGRES_PORT, MLFLOW_PORT,
+# BACKEND_PORT, WEB_PORT, OLLAMA_PORT, BACKEND_IMAGE, FRONTEND_IMAGE).
+name: tujya
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tujya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tujya}
+      POSTGRES_DB: ${POSTGRES_DB:-tujya}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty volume: pgvector extension and the mlflow database.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  mlflow:
+    build: ./docker/mlflow
+    image: tujya-mlflow:3.17.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      mlflow server
+      --host 0.0.0.0 --port 5000
+      --backend-store-uri postgresql+psycopg2://${POSTGRES_USER:-tujya}:${POSTGRES_PASSWORD:-tujya}@postgres:5432/mlflow
+      --artifacts-destination /mlartifacts
+      --serve-artifacts
+      --allowed-hosts "localhost,localhost:*,127.0.0.1,127.0.0.1:*,mlflow,mlflow:*"
+    ports:
+      - "127.0.0.1:${MLFLOW_PORT:-5000}:5000"
+    volumes:
+      - mlartifacts:/mlartifacts
+    restart: unless-stopped
+
+  # One-shot: (re)build the medicine tables from config/ and data/tujya, then exit.
+  pharma-init:
+    image: ${BACKEND_IMAGE:-tujya-backend:local}
+    build: ./backend
+    command: ["python", "-m", "app.pharma_loader"]
+    environment: &backend-env
+      SYNERGYRX_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tujya}:${POSTGRES_PASSWORD:-tujya}@postgres:5432/${POSTGRES_DB:-tujya}
+      SYNERGYRX_PHARMA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tujya}:${POSTGRES_PASSWORD:-tujya}@postgres:5432/${POSTGRES_DB:-tujya}
+      # Module 2: the agent's LLM and embeddings (docs/AGENT.md, docs/RAG.md)
+      SYNERGYRX_OLLAMA_URL: http://ollama:11434
+      SYNERGYRX_LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      # The RAG index: the chroma service below (D76)
+      SYNERGYRX_CHROMA_URL: http://chroma:8000
+    volumes: &backend-mounts
+      # The app's project root is "/" in the image: these are its default paths.
+      - ./config:/config:ro
+      - ./data/tujya:/data/tujya:ro
+      - ./data/parquet:/data/parquet:ro
+      - ./data/vision/c3pi/images:/data/vision/c3pi/images:ro
+      - ./data/rag/corpus:/data/rag/corpus:ro
+      - ./models:/models:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # One-shot: pull the Ollama models if missing, then (re)index the RAG corpus in ChromaDB.
+  # Idempotent: an unchanged corpus is not embedded again. The backend does not wait for it
+  # (scan and interactions work without it; /api/chat answers 503 until the index exists).
+  rag-init:
+    image: ${BACKEND_IMAGE:-tujya-backend:local}
+    build: ./backend
+    command: ["python", "-m", "app.rag.index", "--pull"]
+    environment: *backend-env
+    volumes: *backend-mounts
+    depends_on:
+      chroma:
+        condition: service_started  # the indexer waits up to 60 s for the server itself
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # Vector database of the RAG corpus (D76): one collection `tujya_chunks`, cosine HNSW,
+  # bge-m3 vectors computed by Tujya (Chroma embeds nothing itself). Data in volume `chroma`.
+  # Same version as the `chromadb` client pinned in backend/requirements.txt.
+  chroma:
+    image: chromadb/chroma:1.5.9
+    environment:
+      ANONYMIZED_TELEMETRY: "False"
+    ports:
+      - "127.0.0.1:${CHROMA_PORT:-8001}:8000"
+    volumes:
+      - chroma:/data
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:-tujya-backend:local}
+    build: ./backend
+    environment: *backend-env
+    volumes: *backend-mounts
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pharma-init:
+        condition: service_completed_successfully
+      chroma:
+        condition: service_started
+    restart: unless-stopped
+
+  # Local LLM and embeddings (Module 2). GPU through Docker Desktop + WSL2 (NVIDIA); on a
+  # machine without one: `docker compose -f docker-compose.yml -f docker/ollama/cpu.yml up -d`.
+  # Models live in the `ollama` volume: `docker compose exec ollama ollama pull <model>`.
+  ollama:
+    image: ollama/ollama:0.40.12
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_MAX_LOADED_MODELS: "2"
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-tujya-frontend:local}
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mlartifacts:
+  ollama:
+  chroma:

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#145788" />
+    <meta
+      name="description"
+      content="Tujya: identify pills from a photo, check their active ingredients for interactions, and get answers with cited sources. Information only."
+    />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>Tujya</title>
+    <script>
+      // Pick light or dark mode before the first paint, so a dark page never flashes white.
+      // Same rules as src/theme.ts: the saved choice, otherwise the system setting.
+      (function () {
+        var theme = null;
+        try {
+          theme = localStorage.getItem("tujya-theme");
+        } catch (error) {}
+        if (theme !== "light" && theme !== "dark") {
+          theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

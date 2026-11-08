@@ -1,0 +1,87 @@
+import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { homePath, useAuth } from "./auth";
+import { Logo, Spinner } from "./components";
+import { useT } from "./i18n";
+import { AdminLayout, RequireAuth, UserLayout } from "./layouts";
+import Activity from "./pages/admin/Activity";
+import Dashboard from "./pages/admin/Dashboard";
+import Usage from "./pages/admin/Usage";
+import Users from "./pages/admin/Users";
+import AuthPage from "./pages/AuthPage";
+import { CellLinesPage, DrugsPage } from "./pages/CatalogPage";
+import Home from "./pages/Home";
+import { AboutPage, HelpPage, InfoLayout, PrivacyPage } from "./pages/InfoPages";
+import Intro from "./pages/Intro";
+import Profile from "./pages/Profile";
+import ReportsPage, { ReportPage } from "./pages/ReportsPage";
+import ScanPage from "./pages/ScanPage";
+import SharedReportPage from "./pages/SharedReportPage";
+import ToxicityPage from "./pages/ToxicityPage";
+
+/** "/" shows the introduction to visitors and sends signed-in accounts to their own area. */
+function Landing() {
+  const { user, ready } = useAuth();
+  const t = useT();
+  if (!ready) return <Spinner label={t.common.checkingSession} />;
+  return user ? <Navigate to={homePath(user)} replace /> : <Intro />;
+}
+
+function NotFound() {
+  const t = useT();
+  return (
+    <div className="not-found">
+      <Logo height={72} />
+      <h1>{t.notFound.title}</h1>
+      <p className="muted">{t.notFound.text}</p>
+      <Link className="btn btn-primary" to="/">
+        {t.notFound.back}
+      </Link>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<AuthPage mode="signin" />} />
+      <Route path="/signup" element={<AuthPage mode="signup" />} />
+      {/* A report shared by its owner: read only, no account needed (token after the #). */}
+      <Route path="/shared" element={<SharedReportPage />} />
+
+      {/* Open to everyone, signed in or not. */}
+      <Route element={<InfoLayout />}>
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/help" element={<HelpPage />} />
+      </Route>
+
+      {/* Any signed-in account */}
+      <Route element={<RequireAuth />}>
+        <Route element={<UserLayout />}>
+          <Route path="/home" element={<Home />} />
+          <Route path="/scan" element={<ScanPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/:id" element={<ReportPage />} />
+          <Route path="/toxicity" element={<ToxicityPage />} />
+          <Route path="/drugs" element={<DrugsPage />} />
+          <Route path="/cell-lines" element={<CellLinesPage />} />
+          <Route path="/profile" element={<Profile />} />
+        </Route>
+      </Route>
+
+      {/* Administrators only. The API checks the role again on every request. */}
+      <Route element={<RequireAuth role="admin" />}>
+        <Route element={<AdminLayout />}>
+          <Route path="/admin" element={<Dashboard />} />
+          <Route path="/admin/users" element={<Users />} />
+          <Route path="/admin/activity" element={<Activity />} />
+          <Route path="/admin/reports" element={<Usage />} />
+          <Route path="/admin/account" element={<Profile />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}

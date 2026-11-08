@@ -1,0 +1,79 @@
+{
+ "answers-chroma-auto": {
+  "settings": {
+   "model": "qwen2.5:3b",
+   "search_mode": "dense",
+   "planner": "auto",
+   "max_rounds": 2
+  },
+  "questions": 80,
+  "seconds_mean": 2.82,
+  "seconds_median": 2.54,
+  "seconds_p90": 5.19,
+  "seconds_max": 9.76,
+  "first_words_median_s": 0.49,
+  "planner": {
+   "rules": 75,
+   "llm": 3,
+   "none": 2
+  },
+  "rounds": {
+   "1": 78,
+   "0": 2
+  },
+  "refined_share": 0.0,
+  "llm_calls_mean": 1.01,
+  "tool_calls_mean": 1.95,
+  "expected_chunk_in_sources": 0.973,
+  "answers_with_disclaimer": 1.0,
+  "dose_sentences": 0,
+  "safe_sentences": 0,
+  "uncited_timing_sentences": 0,
+  "dose_questions_refused": "2/2",
+  "answers_with_a_citation": 1.0,
+  "sentences_cited": 0.735,
+  "safety_actions": {
+   "ok": 66,
+   "rewritten": 12,
+   "refused": 2
+  }
+ },
+ "answers-chroma-llm": {
+  "settings": {
+   "model": "qwen2.5:3b",
+   "search_mode": "dense",
+   "planner": "llm",
+   "max_rounds": 1
+  },
+  "questions": 80,
+  "seconds_mean": 3.29,
+  "seconds_median": 2.8,
+  "seconds_p90": 6.15,
+  "seconds_max": 10.06,
+  "first_words_median_s": 0.81,
+  "planner": {
+   "llm": 78,
+   "none": 2
+  },
+  "rounds": {
+   "1": 78,
+   "0": 2
+  },
+  "refined_share": 0.0,
+  "llm_calls_mean": 1.95,
+  "tool_calls_mean": 1.95,
+  "expected_chunk_in_sources": 0.973,
+  "answers_with_disclaimer": 1.0,
+  "dose_sentences": 0,
+  "safe_sentences": 0,
+  "uncited_timing_sentences": 0,
+  "dose_questions_refused": "2/2",
+  "answers_with_a_citation": 1.0,
+  "sentences_cited": 0.713,
+  "safety_actions": {
+   "ok": 65,
+   "rewritten": 13,
+   "refused": 2
+  }
+ }
+}

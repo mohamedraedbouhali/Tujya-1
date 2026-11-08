@@ -1,0 +1,24 @@
+fastapi>=0.115
+uvicorn>=0.30
+sqlalchemy>=2.0.36
+pydantic-settings>=2.4
+email-validator>=2.2
+argon2-cffi>=23.1
+pyarrow>=15
+psycopg[binary]>=3.2
+numpy>=2.0
+opencv-python-headless>=4.10
+onnxruntime>=1.20
+python-multipart>=0.0.18
+# Module 2: agent (LangGraph, LangChain + Ollama), MCP server, ChromaDB (vector store, D76;
+# pinned to the version of the `chroma` service image in docker-compose.yml)
+langgraph>=1.2.18
+langchain-core>=1.7.1
+langchain-ollama>=1.1.0
+# Optional hosted answers (D86): SYNERGYRX_LLM_PROVIDER=groq, local Ollama as fallback
+langchain-groq>=1.1.3
+mcp>=2.3.0
+chromadb==1.5.9
+# Bonus: toxicity tool (Tox21 model, docs/TOXICITY.md)
+rdkit>=2025.3
+lightgbm>=4.5

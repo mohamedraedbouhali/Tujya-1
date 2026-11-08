@@ -1,0 +1,64 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python -m tujya_vision.prepare
+    deps:
+    - path: ../config/splits/selected_images.csv
+      hash: md5
+      md5: de21c22fc4a8b12ef6e410cea10f1f8b
+      size: 543427
+    - path: ../data/vision/c3pi/images
+      hash: md5
+      md5: d578e15638468a663cfe3c2b418a75df.dir
+      size: 4770826176
+      nfiles: 4206
+    - path: tujya_vision/autolabel.py
+      hash: md5
+      md5: 26b310958e91f768acfd060deb459df1
+      size: 11308
+    - path: tujya_vision/prepare.py
+      hash: md5
+      md5: a92f1ced09de7b1e0fc7820cbac12cc5
+      size: 7884
+    outs:
+    - path: ../data/vision/c3pi/labels
+      hash: md5
+      md5: fe0f94ae831a59f2b077efadea7f90ad.dir
+      size: 499022
+      nfiles: 1
+    - path: ../data/vision/datasets
+      hash: md5
+      md5: 2834efcb639621774846d50316a8c4c5.dir
+      size: 304651205
+      nfiles: 10720
+  rag_corpus:
+    cmd: python -m synergyrx_data.tujya corpus
+    deps:
+    - path: data/rag/interim
+      hash: md5
+      md5: fe2849fd545353abc201583685471db2.dir
+      size: 1831662
+      nfiles: 4
+    - path: data/rag/raw/pubmed
+      hash: md5
+      md5: d8b09958e8f915b01cd11bc4c7917285.dir
+      size: 29438575
+      nfiles: 164
+    - path: data/tujya/interactions_between_classes.csv
+      hash: md5
+      md5: 91982324eb744e1ce2a132dcf2cb88ba
+      size: 552534
+    - path: data/tujya/pill_ingredients.csv
+      hash: md5
+      md5: 6051d52004ad0d914547068491a20339
+      size: 19017
+    - path: src/synergyrx_data/tujya/corpus.py
+      hash: md5
+      md5: c5579b4b159125af45d91fc872d3ffa3
+      size: 14008
+    outs:
+    - path: data/rag/corpus
+      hash: md5
+      md5: a1302cd877de52eecf184fbccf7fe22b.dir
+      size: 1849437
+      nfiles: 2
