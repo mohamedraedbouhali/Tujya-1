@@ -1,499 +1,521 @@
-# Tujya
+<div align="center">
 
-Tujya est une application de sécurité du médicament, réalisée comme projet étudiant solo.
-On photographie un ou plusieurs comprimés (upload ou webcam) : un modèle YOLO **détecte**
-chaque comprimé, puis un classifieur entraîné par *transfer learning* l'**identifie** parmi
-une liste fermée de 100 à 200 comprimés du jeu de données public NLM C3PI. Chaque comprimé
-est relié à son ou ses principes actifs, et Tujya vérifie les **interactions** entre ces
-principes actifs dans DDInter. Un agent LangGraph répond ensuite aux questions de suivi par
-RAG (notices openFDA, résumés PubMed, DDInter), en **citant ses sources**.
+# 💊 tujya-data
 
-> Information uniquement : Tujya ne remplace pas l'avis d'un pharmacien ou d'un médecin.
-> Tujya ne donne jamais de posologie et ne dit jamais qu'une association est « sûre » :
-> il indique au mieux « aucune interaction connue dans cette base ».
+**Pipeline de collecte de données pour Tujya**
 
-Feuille de route : [docs/ROADMAP.md](docs/ROADMAP.md). Décisions : [docs/DECISIONS.md](docs/DECISIONS.md).
+Prédire quelles combinaisons de médicaments agissent mieux ensemble sur des lignées de cancer,
+en s'appuyant sur les données publiques et sur la littérature scientifique (PubMed).
 
-## Exigences des modules
+`Python 3.11+` · `FastAPI` · `React` · `Parquet` · `Licences vérifiées`
 
-Une case n'est cochée que lorsque l'exigence est réellement satisfaite.
+🏫 TEK-UP University · 👥 **Équipe : Mohamed Raed Bouhali · Ilef Ben Hassen · Melek Bouabid**
 
-### Module 1 : Industrialisation Vision & MLOps
+</div>
 
-- [x] Axe vision : détection des comprimés avec YOLOv8/v11
-- [x] Axe vision : identification de chaque comprimé par transfer learning
-- [x] Backend FastAPI asynchrone, schémas Pydantic, Swagger sur `/docs`
-- [x] Frontend React : upload d'image, webcam, affichage des prédictions et des bounding boxes
-- [x] DVC (versionnement des données)
-- [x] MLflow : tracking des expériences
-- [x] MLflow : Model Registry
-- [x] Export ONNX et inférence ONNX Runtime
-- [x] Docker Compose
-- [x] GitHub Actions CI/CD
-- [ ] Soutenance pratique (démonstration technique en direct)
-
-### Module 2 : AI Engineering
-
-- [x] RAG avec gestion des documents, métadonnées, citations, documentation
-- [x] Tool calling / MCP
-- [x] LangChain et/ou LangGraph
-- [x] Benchmarking de la récupération et de la génération
-- [x] Interface web
-- [x] Dépôt GitHub documenté avec commits réguliers
-- [x] Rapport technique ([module 2](docs/rapports/rapport_module2_ai_engineering.pdf) ; aussi [module 1](docs/rapports/rapport_module1_vision_mlops.pdf))
-- [ ] Démonstration
-
-## Lancer l'application
-
-Toute l'application (PostgreSQL, ChromaDB, MLflow, Ollama sur le GPU, API, agent, site web)
-démarre avec une seule commande, depuis la racine du dépôt :
-
-```bash
-docker compose up -d --build
-```
-
-- Site : <http://localhost:8080> (compte de démonstration `user@gmail.com` / `user`, puis
-  « Scanner », et le panneau « Ask about your pills » en bas de page) ; Swagger :
-  <http://localhost:8080/docs> ; MLflow : <http://localhost:5000>.
-- Module 2 : au premier démarrage, `rag-init` télécharge les modèles Ollama (qwen2.5:3b,
-  bge-m3) puis indexe le corpus `data/rag/corpus` (DVC) dans ChromaDB (service `chroma`). Agent :
-  [docs/AGENT.md](docs/AGENT.md) ; corpus et recherche : [docs/RAG.md](docs/RAG.md) ;
-  serveur MCP : [docs/MCP.md](docs/MCP.md) ; benchmark : [docs/BENCHMARK.md](docs/BENCHMARK.md).
-- Avant le premier démarrage : les données sous `data/` (DVC) et les modèles dans `models/`
-  (`cd vision && python -m tujya_vision.publish`, depuis le Model Registry MLflow). Détails :
-  [docs/INFRA.md](docs/INFRA.md) ; API : [docs/API.md](docs/API.md).
-- **Script de la soutenance** : [docs/DEMO.md](docs/DEMO.md) ; questions probables du jury :
-  [docs/QUESTIONS_JURY.md](docs/QUESTIONS_JURY.md) ; rapport de la dernière session :
-  [docs/SESSION_REPORT_4.md](docs/SESSION_REPORT_4.md).
-- Démonstration pas à pas : [docs/SESSION_REPORT_2.md](docs/SESSION_REPORT_2.md) (scan) et
-  [docs/SESSION_REPORT_3.md](docs/SESSION_REPORT_3.md) (agent) ; captures d'écran :
-  [docs/screenshots/](docs/screenshots/).
-
-### Usage strictement local
-
-Tujya tourne **uniquement sur ce PC** : aucun déploiement public, aucun tunnel, aucune image
-Docker de l'application publiée, aucun service lié à `0.0.0.0` sur la machine. Le dépôt
-GitHub reste public (code et documentation seulement).
-
-Exception voulue (D86) : avec `SYNERGYRX_LLM_PROVIDER=groq` dans `backend/.env`, la question,
-les comprimés confirmés et les passages trouvés sont envoyés à l'API de Groq pour rédiger la
-réponse. Les photos, les documents, les embeddings et l'index restent sur ce PC ; sans cette
-ligne (ou si Groq échoue), le modèle local Ollama répond et rien ne sort.
-
-- Tous les ports publiés par Docker Compose sont liés à `127.0.0.1` (postgres 5432, mlflow
-  5000, backend 8000, ollama 11434, site 8080) : vérifié avec `netstat`, ces ports refusent
-  les connexions depuis l'adresse réseau local du PC.
-- Serveurs de développement : Vite sur `127.0.0.1:5173`, uvicorn avec `--host 127.0.0.1`,
-  serveur MCP HTTP limité à `127.0.0.1` / `localhost` / `::1`.
-- Détails et vérification : [docs/INFRA.md](docs/INFRA.md#strictly-local-usage-since-2026-10-28).
-
-### Données (DVC)
-
-Les données (images C3PI, métadonnées, tables DDInter, corpus RAG, sorties des étapes
-`prepare` et `rag_corpus`) sont versionnées par DVC (15 306 fichiers, 5,0 Go). Remote : un
-dossier local hors du dépôt, à déclarer sur ce PC (aucun remote n'est configuré par défaut).
-
-```bash
-vision/.venv/Scripts/dvc.exe remote add -d --local localstore <dossier-de-stockage>
-vision/.venv/Scripts/dvc.exe pull        # récupère toutes les données dans un nouveau clone
-vision/.venv/Scripts/dvc.exe status -c   # cache et remote synchronisés ?
-```
-
-Passer plus tard à Google Drive ou S3 (commandes seulement, rien n'est configuré) :
-
-```bash
-dvc remote add gdrive gdrive://<id-du-dossier> && dvc remote default gdrive && dvc push
-dvc remote add s3store s3://<bucket>/tujya && dvc remote modify --local s3store profile <profil-aws>
-dvc remote default s3store && dvc push
-```
-
-Identifiants toujours dans `.dvc/config.local` (ignoré par git) ; les données doivent rester
-privées (licences C3PI, DDInter). Détails : [docs/INFRA.md](docs/INFRA.md#dvc-remote-since-2026-10-28).
-
-## Résultats du benchmark RAG (module 2)
-
-88 questions (44 FR, 44 EN) sur les 82 principes actifs, construites à partir du corpus et
-relues à la main ; détails, limites et commandes : [docs/BENCHMARK.md](docs/BENCHMARK.md) ;
-chaque run est dans MLflow (expérience `tujya-rag`).
-
-| Récupération (83 questions, top 10) | Recall@1 | Recall@3 | Recall@5 | Recall@10 | MRR |
-|---|---:|---:|---:|---:|---:|
-| BM25 + filtre principe actif | 0,566 | 0,747 | 0,783 | 0,819 | 0,660 |
-| hybride (RRF) + filtre | 0,711 | 0,892 | 0,904 | 0,928 | 0,796 |
-| **dense (bge-m3) + filtre, retenu** | **0,795** | **0,880** | **0,928** | **0,976** | **0,852** |
-
-| Génération (qwen2.5:3b, juge gemma3:4b) | Résultat |
-|---|---:|
-| Phrases citées soutenues par leur source | 94,0 % |
-| Phrases avec citation | 69,8 % |
-| Doses chiffrées / « sûr » dans les réponses | 0 / 0 (et 4 conseils d'ajustement sans chiffre, règle étendue depuis) |
-| Avertissement présent ; questions de dose refusées | 100 % ; 2/2 |
-| RAGAS (8 questions) : fidélité / pertinence / précision du contexte | 0,979 / n/d / 0,809 |
-| Temps de réponse moyen (RTX 2050) | 4,7 s |
-
-## Bonus : outil de toxicité (Tox21)
-
-Outil `predict_toxicity` (agent, serveur MCP, `POST /api/toxicity`, page **Toxicity** du
-site) : pour une ou deux molécules (nom de principe actif ou SMILES), probabilité d'activité
-dans les 12 tests in vitro de Tox21, **« prédiction d'un modèle sur des tests in vitro, pas
-une évaluation clinique »**. Chaque molécule est prédite séparément ; rien n'est dit sur leur
-association. Détails : [docs/TOXICITY.md](docs/TOXICITY.md).
-
-- Données : Tox21 (copie MoleculeNet / DeepChem, 7 831 molécules), versionnées par DVC ;
-  aucune licence explicite trouvée (données publiques d'agences fédérales américaines,
-  citées, non redistribuées, D73).
-- Modèle : empreintes Morgan (RDKit, rayon 2, 2 048 bits), un LightGBM par test, **split par
-  scaffold** (6 258 / 782 / 783) ; ROC-AUC moyen **0,725** en test (0,647 à 0,822 selon le
-  test), 0,766 en validation ; MLflow `tujya-tox`, modèle enregistré `tujya-tox21` v2.
-- Dans le chat, les phrases sur la prédiction sont écrites par le code à partir du résultat de
-  l'outil (le LLM de 3B lisait mal les probabilités, D74) ; nouvelle règle : jamais « non
-  toxique ».
-- Synergie (DrugComb) : étudiée mais **pas transformée en outil** : la règle fixée avant
-  l'entraînement (RMSE au moins 10 % sous la moyenne et r ≥ 0,3, split par médicament) n'est
-  pas atteinte (−7,3 %, r 0,377) ; détails : [docs/SYNERGY.md](docs/SYNERGY.md).
-
-## Sources de données
-
-| Jeu de données | Lien | Licence | Usage dans Tujya |
-|---|---|---|---|
-| NLM C3PI (Computational Photography Project for Pill Identification) | [catalog.data.gov](https://catalog.data.gov/dataset/computational-photography-project-for-pill-identification-c3pi), [fichiers](https://data.lhncbc.nlm.nih.gov/public/Pills/) | ODbL ; usage recherche et développement uniquement | Images de comprimés (photos « consumer » et images de référence) pour la détection et l'identification ; métadonnées (NDC, nom, principe actif) |
-| ePillID | [arXiv:2005.14288](https://arxiv.org/abs/2005.14288) | article (benchmark construit sur C3PI) | Benchmark de référence pour comparer l'identification |
-| DDInter 2 | [ddinter2.scbdd.com](https://ddinter2.scbdd.com/) | CC BY-NC-SA 4.0 (usage académique non commercial) | Interactions entre principes actifs : sévérité, description |
-| RxNorm / RxNav (NLM) | [lhncbc.nlm.nih.gov/RxNav](https://lhncbc.nlm.nih.gov/RxNav/APIs/) | conditions d'utilisation UMLS / RxNorm (API publique) | Correspondance NDC / nom -> principe(s) actif(s) si les métadonnées C3PI ne suffisent pas |
-| openFDA drug labels | [open.fda.gov/apis/drug/label](https://open.fda.gov/apis/drug/label/) | CC0 / domaine public (conditions openFDA) | Corpus RAG : notices officielles, avec métadonnées et citations |
-| PubMed (E-utilities) | [ncbi.nlm.nih.gov/books/NBK25501](https://www.ncbi.nlm.nih.gov/books/NBK25501/) | conditions NLM | Corpus RAG : résumés d'articles |
-
-Les données ne sont jamais commitées dans git (plusieurs sources interdisent la
-redistribution) : elles sont sous `data/`, versionnées avec DVC. Les sources de l'ancien
-pipeline SynergyRx sont décrites dans l'annexe ci-dessous.
-
-## Journal de progression
-
-| Date | Tâche | Ce qui a été fait | Fichiers | Résultats |
-|---|---|---|---|---|
-| 2026-10-26 | Commit initial (`9398f0c`) | Import du pipeline SynergyRx, du backend FastAPI, du frontend React (marque Tujya) et du plan Tujya | tout le dépôt | 270 tests unitaires du pipeline ; backend avec comptes, sessions, admin, catalogue |
-| 2026-10-27 | Tâche 1 : README et règles du projet | Présentation de Tujya, exigences des modules, sources de données, journal ; règles obligatoires de session dans CLAUDE.md ; nouvelle orientation données (C3PI, pas de photos personnelles, deux étapes détection + identification, ePillID, openFDA) | `README.md`, `CLAUDE.md`, `docs/ROADMAP.md`, `docs/DECISIONS.md`, `docs/NIGHT_REPORT.md` | Documentation à jour ; aucune exigence cochée (aucune n'est encore satisfaite) |
-| 2026-10-28 | Tâche 2 : exploration de C3PI | Téléchargement de `sampleData.zip` (517 Mo) et des 110 fichiers XML de métadonnées ; outil `vision/tujya_vision` (index des images, sélection, téléchargement vérifié par SHA-1) ; documentation complète du jeu de données | `docs/DATASET_C3PI.md`, `vision/tujya_vision/c3pi.py`, `vision/tujya_vision/data_cli.py`, `vision/tests/test_c3pi.py` | 133 458 fichiers ; 40 587 photos « consumer » de 2 400 comprimés ; 380 comprimés ont au moins 20 photos ; aucune bounding box ni masque pour les photos consumer, masques alpha dans les images de référence segmentées ; 8 tests |
-| 2026-10-28 | Tâche 3 : sous-ensemble d'entraînement | 150 classes (comprimés = NDC9 + part) classées par nombre de photos consumer, hors appareils Canon G10 et Nikon S3000 (trop lourds pour le débit) ; jusqu'à 30 photos par classe + 1 image de référence RxNav par NDC ; téléchargement vérifié par SHA-1 ; split par photo 70/15/15 stratifié par classe ; DVC initialisé, images et métadonnées suivies (pas encore de remote) | `config/pill_classes.csv`, `config/splits/selected_images.csv`, `data/vision/c3pi/images.dvc`, `data/vision/c3pi/metadata.dvc`, `.dvc/`, `vision/requirements.txt` | 4 206 fichiers (4,8 Go), 24 à 30 photos par classe, 3 006 train / 600 val / 600 test, 0 échec de téléchargement ; DVC local seulement : case DVC non cochée tant qu'aucun remote n'est configuré |
-| 2026-10-28 | Tâche 4 : principes actifs et interactions | Principes actifs par RxNav (NDC -> RxCUI -> ingrédients de base, sans dosage) ; connecteur DDInter existant activé par une étape Tujya (conditions CC BY-NC-SA acceptées, 14 fichiers ATC au lieu de 8) ; 3 alias de noms ; tables d'interactions propres (paire, sévérité, description, source) suivies par DVC | `src/synergyrx_data/tujya/`, `tests/unit/test_tujya.py`, `config/ingredient_aliases.csv`, `docs/INTERACTIONS.md`, `data/tujya.dvc` | 149/150 classes associées (82 principes actifs ; seule la multivitamine n'a pas d'ingrédient) ; 82/82 trouvés dans DDInter ; 2 350 paires entre classes (125 Major, 826 Moderate, 72 Minor, 1 327 Unknown) ; 40 508 paires avec n'importe quel médicament ; 279 tests du pipeline passent |
-| 2026-10-28 | Tâche 5 : infrastructure | `docker-compose.yml` : PostgreSQL 16 + pgvector et serveur MLflow 3.17.2 (store PostgreSQL, artefacts dans un volume) ; schéma SQL (sources, pills, ingredients, pill_ingredients, interactions) en SQLAlchemy, séparé de `app.db` ; chargeur idempotent + tests | `docker-compose.yml`, `docker/`, `backend/app/pharma.py`, `backend/app/pharma_loader.py`, `backend/tests/test_pharma.py`, `docs/INFRA.md` | Conteneurs démarrés (postgres healthy, MLflow /health = 200) ; chargé dans PostgreSQL : 150 comprimés, 1 716 ingrédients, 161 liens, 40 508 interactions ; 37 tests backend passent ; case Docker Compose non cochée (backend et frontend pas encore dans le compose) |
-| 2026-10-28 | Tâche 6 : pipeline vision (identification) | Matériel : RTX 2050 4 Go (PyTorch CUDA 13.0 installé après les images) ; venv `vision/.venv` ; boîtes automatiques sur les photos consumer (vision classique : fond quadratique robuste, rejet des pièces, GrabCut), photos douteuses exclues ; jeux YOLO détection + crops 224 px ; étape DVC `prepare` ; classifieur YOLO11s-cls par transfer learning, suivi MLflow, export ONNX vérifié avec ONNX Runtime, enregistré dans le Model Registry | `vision/tujya_vision/autolabel.py`, `prepare.py`, `train.py`, `evaluate.py`, `dvc.yaml`, `docs/VISION.md` | 3 306/4 056 photos étiquetées (81,5 %, précision ~90 % sur un audit de 48 photos) ; test top-1 **93,5 %**, top-5 **98,1 %** (589 crops, 148 classes) ; ONNX = PyTorch sur 100 % des crops vérifiés ; `tujya-pill-classifier` v2 dans MLflow ; essai CPU 3 époques : 19,4 % / 36,0 % |
-| 2026-10-28 | Tâche 7 : CI | `.github/workflows/ci.yml` : 4 jobs (pipeline : ruff + format + mypy + tests unitaires ; backend : ruff + format + pytest ; vision : ruff + format + tests sans entraînement ; frontend : npm ci + build). Aucun test réseau en direct | `.github/workflows/ci.yml` | En local : 279 tests pipeline, 37 backend, 14 vision passent, ruff/mypy propres, build frontend OK ; résultat GitHub Actions dans le rapport de nuit ; case CI/CD non cochée (pas encore de CD) |
-| 2026-10-28 | Tâche 6 (suite) : détection et bout en bout | Détecteur YOLO11n (1 classe « pill ») entraîné 30 époques sur GPU avec les boîtes automatiques, export ONNX vérifié, enregistré `tujya-pill-detector` v1 ; évaluation de bout en bout détecteur -> crop -> classifieur avec les deux modèles ONNX sur les 600 photos de test ; `dvc.lock` de l'étape `prepare` ; auto-installation d'Ultralytics désactivée | `vision/tujya_vision/evaluate.py`, `vision/tujya_vision/__init__.py`, `dvc.lock`, `.dvcignore`, `docs/VISION.md` | Détection test : mAP50 **0,972**, mAP50-95 **0,861**, précision 0,957, rappel 0,936 (par rapport aux boîtes automatiques) ; ONNX = PyTorch (même nombre de boîtes sur 100 %, IoU 0,976) ; bout en bout : comprimé trouvé sur 98,5 % des photos, top-1 **89,2 %**, top-5 **95,8 %** |
-| 2026-10-28 | Session 2, tâche 1 : Swagger sur `/docs` | Swagger UI servi sur `/docs` et le schéma sur `/openapi.json` (exigence du module 1) ; `/api/docs` redirige vers `/docs`, `/api/openapi.json` sert le même schéma ; proxy Vite et futur `nginx.conf` du frontend exposent `/docs` et `/openapi.json` ; API renommée « Tujya API » ; tableau du journal remis en ordre (la ligne de séparation était au milieu) | `backend/app/main.py`, `backend/tests/test_docs.py`, `frontend/vite.config.ts`, `frontend/nginx.conf` | 4 nouveaux tests ; 41 tests backend passent |
-| 2026-10-28 | Session 2, tâche 2 : API de scan | `POST /api/scan` asynchrone : image (multipart, JPEG/PNG/WebP, 10 Mo max) -> détecteur ONNX -> crop de chaque comprimé -> classifieur ONNX, avec ONNX Runtime (CPU, GPU en option) ; pour chaque comprimé : boîte en pixels et normalisée, top-5 (classe, nom, nom générique, principes actifs, probabilité), `needs_confirmation` sous le seuil 0,85 choisi sur la validation ; taille de l'image et temps d'inférence ; schémas Pydantic, connexion requise ; modèles chargés depuis `SYNERGYRX_MODELS_DIR`, remplis par `python -m tujya_vision.publish` depuis le Model Registry MLflow (503 clair si absents) | `backend/app/scanner.py`, `backend/app/routers/scan.py`, `backend/app/medicines.py`, `backend/app/schemas.py`, `backend/app/limits.py`, `backend/scripts/evaluate_scan.py`, `vision/tujya_vision/publish.py`, `backend/tests/test_scan.py`, `backend/tests/fake_models.py`, `docs/API.md`, `docs/VISION.md` | Même résultat qu'Ultralytics (40/40 photos même nombre de boîtes, IoU 0,9999) ; sur les 600 photos de test : comprimé trouvé 98,5 %, top-1 **89,3 %**, top-5 **95,8 %** ; seuil 0,85 : 70,5 % des photos de test acceptées sans confirmation, 99,3 % justes ; 12 tests avec de petits modèles ONNX factices (pas de poids réels en CI) |
-| 2026-10-28 | Session 2, tâche 3 : API d'interactions | `POST /api/interactions` : 2 à 10 comprimés (class_id) et/ou principes actifs ; chaque paire avec sévérité DDInter, description, source (nom, URL, citation), principes actifs communs ; paires triées par sévérité ; sans résultat : « Aucune interaction connue dans cette base de données », jamais « sûr » ; élément inconnu ou comprimé sans principe actif : « aucune vérification n'est possible ». `GET /api/pills?q=` : recherche dans les 150 classes (nom, générique, empreinte, fabricant, principe actif, numéro). Lecture des tables PostgreSQL du chargeur | `backend/app/routers/medicines.py`, `backend/app/medicines.py`, `backend/tests/test_medicines.py`, `docs/API.md` | 16 tests sur SQLite (dont : jamais le mot « safe »/« sûr », avertissement et source toujours présents) ; 69 tests backend passent ; vérifié sur PostgreSQL (warfarine + fluconazole : Major) ; case « Backend FastAPI asynchrone, Pydantic, Swagger `/docs` » cochée |
-| 2026-10-28 | Session 2, tâche 4 : page Scanner | Page « Scanner » (comptes connectés) : upload (glisser-déposer) ou webcam (getUserMedia, capture d'une image et prédictions en direct environ toutes les secondes) ou galerie de démo ; photo avec boîtes et étiquettes en superposition SVG ; top-5 de chaque comprimé avec barres de probabilité, badge « Please confirm » sous le seuil, recherche d'un autre comprimé (`GET /api/pills`), confirmation ; liste « My pills » sur plusieurs photos ; dès 2 comprimés, `/api/interactions` affiché par sévérité avec sources et avertissement. Galerie de 8 photos du split de test servies en lecture seule par le backend (`GET /api/demo/images`), jamais commitées. Preuve Playwright | `frontend/src/pages/ScanPage.tsx`, `frontend/src/api.ts`, `frontend/src/styles.css`, `frontend/scripts/screenshots.mjs`, `backend/app/routers/demo.py`, `backend/tests/test_demo.py`, `config/demo_gallery.csv`, `docs/screenshots/` | `npm run build` OK ; script Playwright : connexion, upload d'une photo de test, 2 photos de démo, interactions (fluconazole + citalopram et citalopram + tramadol : Major ; fluconazole + tramadol : Moderate), cas « à confirmer », webcam (caméra factice de Chromium), Swagger : 7 captures dans `docs/screenshots/` ; 74 tests backend ; case « Frontend React » cochée |
-| 2026-10-28 | Session 2, tâche 5 : Docker Compose complet | Images backend (Python 3.12, FastAPI, ONNX Runtime CPU, utilisateur non root, healthcheck) et frontend (build Node 22 puis nginx 1.27 qui sert le site et transmet `/api`, `/docs`, `/openapi.json` au backend) ; service ponctuel `pharma-init` qui recharge les tables de médicaments ; modèles, données et config montés en lecture seule (D55) ; comptes dans PostgreSQL ; section « Lancer l'application » | `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`, `docs/INFRA.md`, `README.md` | `docker compose up -d --build` : tous les services sains ; curl via nginx : health 200, `/docs` 200, `/openapi.json` 18 routes, `/api/public/summary` 200, `/api/scan` réel sur une photo de test (fluconazole, 0,996, 59 ms), interactions Major ; parcours Playwright complet sur les conteneurs ; case « Docker Compose » cochée (Ollama viendra avec le module 2) |
-| 2026-10-28 | Session 2, tâche 6 : CD | `.github/workflows/cd.yml` : quand `ci` réussit sur un push vers `main`, construit les images backend et frontend du commit testé, les teste (health, `/docs`, `/openapi.json` ; site et route `/scan`), puis les pousse sur GitHub Container Registry (`latest` et `sha-<commit>`) avec `GITHUB_TOKEN` (`packages: write`) ; documentation | `.github/workflows/cd.yml`, `docs/CD.md`, `docs/INFRA.md` | Run CD 40655933124 vert (2 jobs) après le run CI 40655719906 vert ; poussés : `ghcr.io/melekbouabid/tujya-backend` et `tujya-frontend`, tags `latest` et `sha-44b89c7` ; case « GitHub Actions CI/CD » cochée |
-| 2026-10-28 | Session 3, tâche 0 : Ollama | Service `ollama` dans `docker-compose.yml` (image officielle `ollama/ollama:0.40.12`, volume nommé `ollama`, port 11434) avec le GPU NVIDIA réservé (Docker Desktop + WSL2) ; variante sans GPU `docker/ollama/cpu.yml` ; 4 petits modèles d'instruction comparés sur une même question en français ; correction du schéma de docs/VISION.md (identifiant YOLO11s-cls) | `docker-compose.yml`, `docker/ollama/cpu.yml`, `docs/INFRA.md`, `docs/DECISIONS.md` (D57, D58), `docs/VISION.md` | GPU vu dans le conteneur (`nvidia-smi`, Ollama : CUDA, 4 Gio) ; **qwen2.5:3b** retenu : 100 % GPU, 2,2 Go, 47 jetons/s, **1,7 s** pour la réponse ; llama3.2:3b 3,2 s, gemma3:4b 12,1 s, qwen3:4b 90 s (raisonnement) |
-| 2026-10-28 | Session 3, tâche 1 : corpus documentaire | Connecteur openFDA `openfda_label` dans le style du pipeline (PoliteClient, 3 req/s, cache, manifeste, provenance) : une notice par principe actif selon une règle documentée (D60), sections de posologie jamais stockées ; mode `ingredients` du connecteur PubMed existant (interactions et effets indésirables, 20 résumés au plus par principe actif, tri par pertinence, D61) ; paires DDInter entre les classes (D62) ; découpage par section (notices), par paragraphe (résumés), une ligne par paire (DDInter), avec métadonnées complètes ; dossier `data/rag` suivi par DVC (`dvc add` + étape `rag_corpus`) | `src/synergyrx_data/connectors/openfda.py`, `connectors/pubmed.py`, `literature/queries.py`, `tujya/corpus.py`, `tujya/__main__.py`, `tests/unit/test_tujya_rag.py`, `dvc.yaml`, `data/rag/*.dvc`, `docs/RAG.md` | 82/82 notices (81 sur ordonnance, 1 OTC ; 975 sections) ; 1 570 résumés PubMed (17 à 20 par principe actif, 4 rétractés signalés) ; 2 350 paires DDInter ; **8 661 chunks** pour 4 002 documents ; 8 nouveaux tests, 287 tests du pipeline passent |
-| 2026-10-28 | Session 3, tâche 2 : récupération | Embeddings **bge-m3** servis par Ollama (D59) ; table `rag_chunks` dans PostgreSQL avec pgvector (`vector(1024)`, listes `text[]`) ; script d'indexation idempotent `python -m app.rag.index` (hash par chunk) ; BM25 en mémoire, recherche dense exacte en SQL, fusion RRF ; filtres principe actif, type, section, rétractés ; tests avec des embeddings factices sur SQLite et sur PostgreSQL (service pgvector ajouté au job backend de la CI) | `backend/app/rag/embeddings.py`, `store.py`, `retrieval.py`, `index.py`, `backend/scripts/search.py`, `backend/tests/test_rag.py`, `test_rag_pgvector.py`, `.github/workflows/ci.yml`, `docs/RAG.md` | 8 661 chunks indexés en 364 s (GPU) ; 2e passage : 0 recalculé en 0,1 s ; par requête : BM25 ~6 ms, dense 130-190 ms, hybride ~170 ms ; bge-m3 et qwen2.5:3b tiennent ensemble sur le GPU (0,7 + 2,2 Go) |
-| 2026-10-28 | Session 3, tâche 3 : agent LangGraph et `/api/chat` | Outils LangChain `identify_pills`, `check_interaction`, `get_drug_info`, `search_documents` (point d'extension pour `predict_toxicity` et `predict_synergy`, ajoutés en Bonus) ; graphe LangGraph comprendre -> outils (choix par appel d'outils Ollama, complété par des règles, D64) -> récupération -> réponse avec citations numérotées -> contrôle de sécurité (doses, « sûr », horaires non sourcés, citations, avertissement ; refus des questions de dose, D63) ; `POST /api/chat` asynchrone, connexion requise, JSON ou flux SSE (outils, phrases vérifiées, résultat final) ; service compose `rag-init` (téléchargement des modèles + indexation) ; URL d'Ollama par variable d'environnement | `backend/app/rag/agent.py`, `tools.py`, `safety.py`, `names.py`, `runtime.py`, `backend/app/routers/chat.py`, `backend/app/schemas.py`, `backend/scripts/ask.py`, `backend/tests/test_chat.py`, `test_safety.py`, `docker-compose.yml`, `docs/AGENT.md` | Questions réelles (qwen2.5:3b + bge-m3, GPU) : warfarine + fluconazole -> DDInter Major cité [1] ; contre-indications de la metformine -> réponse sourcée [1] ; ~13-15 s par question ; 8 tests de l'API de chat et 9 tests de sécurité avec un LLM factice ; 94 tests backend passent |
-| 2026-10-28 | Session 3, tâche 4 : serveur MCP | Serveur MCP avec le SDK Python officiel (`mcp` 2.3, `MCPServer`) exposant les 4 mêmes outils que l'agent (même code) ; transports stdio et streamable HTTP ; documentation de connexion (Claude Desktop, Claude Code, client HTTP) ; script de test de fumée en stdio | `backend/app/mcp_server.py`, `backend/scripts/mcp_smoke.py`, `backend/tests/test_mcp.py`, `docs/MCP.md` | Essai réel en stdio sur PostgreSQL : 4 outils listés, `check_interaction` warfarine + fluconazole -> Major, `search_documents` -> notices de la metformine ; 2 tests (liste des outils, appels) ; 96 tests backend passent |
-| 2026-10-28 | Session 3, tâche 5 : benchmark | Jeu de 88 questions (44 FR, 44 EN : interactions, contre-indications, encadrés, mécanismes, effets indésirables, mises en garde, articles PubMed, sécurité) construit à partir du corpus puis relu à la main (D66) ; récupération : Recall@1/3/5/10 et MRR pour BM25, dense, hybride, avec et sans filtre de principe actif ; génération : sécurité, vérification des citations par un juge local (gemma3:4b, contrôle à 10 % de faux oui), RAGAS 0.4.3 sur 8 questions (D67) ; tout est dans MLflow (expérience `tujya-rag`) ; corrections trouvées par le benchmark (contexte 4096, 450 jetons max, attribution des citations, conseils de dose sans chiffre, D68) | `benchmark/`, `backend/scripts/bench_*.py`, `docs/BENCHMARK.md`, `docs/DECISIONS.md` (D65-D68) | Meilleure récupération : **dense + filtre**, Recall@5 **0,928**, MRR **0,852** (hybride 0,904 / 0,796 ; BM25 0,783 / 0,660) -> réglage par défaut (D65) ; génération : aucune dose chiffrée (4 conseils d'ajustement sans chiffre, règle étendue ensuite), 0 « sûr », avertissement 100 %, questions de dose refusées 2/2, phrases citées soutenues **94,0 %**, RAGAS : fidélité 0,979, pertinence n/a, précision du contexte 0,809 ; réponse en 4,7 s en moyenne |
-| 2026-10-28 | Session 3, tâche 6 : chat dans le site | Panneau « Ask about your pills » sous la page Scanner : questions sur les comprimés confirmés (suggestions), réponse en flux SSE phrase par phrase, citations numérotées cliquables vers la liste des sources (titre, type, section, date, extrait sans dose), appels d'outils discrets (repliables), avertissement toujours visible ; nginx sans tampon pour `/api/chat` ; pile complète `docker compose up -d --build` avec Ollama et `rag-init` ; captures Playwright | `frontend/src/pages/ChatPanel.tsx`, `frontend/src/api.ts`, `ScanPage.tsx`, `styles.css`, `frontend/nginx.conf`, `frontend/scripts/chat-screenshots.mjs`, `docs/screenshots/08-11` | `npm run build` OK ; sur les conteneurs : question réelle (fluconazole + citalopram) -> DDInter Major cité, réponse en ~7 s ; question de dose refusée ; 4 captures |
-| 2026-10-28 | Session 4, tâche 1 : usage strictement local | Tous les ports publiés du compose liés à `127.0.0.1` (postgres, mlflow, backend, ollama, frontend) ; Vite (`server.host`, `preview.host`) sur `127.0.0.1` ; uvicorn documenté avec `--host 127.0.0.1` ; serveur MCP HTTP : `--host` limité aux adresses de bouclage (test) ; règle permanente dans CLAUDE.md (jamais de déploiement public, de tunnel, d'image publiée, de `0.0.0.0` sur la machine) | `docker-compose.yml`, `frontend/vite.config.ts`, `backend/app/mcp_server.py`, `backend/tests/test_mcp.py`, `CLAUDE.md`, `docs/INFRA.md`, `README.md` | `docker compose up -d --build` : tous les services sains ; `netstat` : 5432, 5000, 8000, 8080, 11434 seulement sur `127.0.0.1` ; `localhost:8080`, `/docs`, MLflow : 200 ; mêmes ports refusés depuis les adresses réseau du PC (192.168.1.6, WSL) ; Vite sur `127.0.0.1:5173` ; 3 tests MCP |
-| 2026-10-28 | Session 4, tâche 2 : CD sans publication | `cd.yml` : après une CI verte sur `main`, construit et teste les images backend et frontend du commit testé, **sans les pousser** (`contents: read` seulement) ; envoi sur ghcr.io conservé uniquement comme option manuelle (`workflow_dispatch`, `push_images`, désactivée par défaut, seul job avec `packages: write`) ; CI inchangée ; anciens paquets ghcr.io non supprimables depuis ici (`gh` sans le droit `delete:packages`), marche à suivre dans docs/CD.md (D70) | `.github/workflows/cd.yml`, `docs/CD.md`, `docs/INFRA.md`, `docs/DECISIONS.md`, `CLAUDE.md` | CI 40768873414 verte puis CD 40769096658 verte : 2 images construites et testées, job `publish` ignoré, « Not pushed » ; dernière publication par l'ancienne CD : `sha-2222e1b` ; suppression des paquets à faire à la main (docs/CD.md) |
-| 2026-10-28 | Session 4, tâche 3 : remote DVC | Remote par défaut `localstore` = `C:\Users\msi\dvc-storage\tujya` (dossier hors du dépôt, D71), `.dvc/config` commité ; `dvc push` de tout ce qui est suivi (images et métadonnées C3PI, tables DDInter, corpus RAG brut, intermédiaire et découpé, sorties de `prepare`) ; preuve : clone neuf depuis GitHub dans un dossier temporaire, `dvc pull`, `dvc status`, comparaison SHA-256 fichier par fichier avec l'original, clone supprimé ; commandes pour passer à Google Drive ou S3 (non configurés) | `.dvc/config`, `docs/INFRA.md`, `README.md`, `docs/DECISIONS.md` | `dvc push` : 15 306 fichiers, 5,0 Go, 1 min 40 ; `dvc status -c` : synchronisés ; clone : `dvc pull` 15 306 fichiers en 10 min 54, `dvc status` à jour, 15 306/15 306 fichiers identiques (SHA-256), seuls manquent 5 caches Ultralytics `*.cache` exclus par `.dvcignore` ; case « DVC » cochée |
-| 2026-10-28 | Session 4, tâche 4 : script de démo et questions du jury | `docs/DEMO.md` : démonstration de 15 étapes (≈ 14 min) avec, pour chacune, l'action, ce que le jury voit et une phrase ; préparation (préchauffage du LLM) et plan B ; `docs/QUESTIONS_JURY.md` : 25 questions et réponses chiffrées ; répétition complète sur les conteneurs (Playwright + CLI) ; nouveau script de captures MLflow ; correction trouvée par la répétition : les outils côté PC se connectent à `127.0.0.1` et non `localhost` (D72) | `docs/DEMO.md`, `docs/QUESTIONS_JURY.md`, `frontend/scripts/mlflow-screenshots.mjs`, `docs/screenshots/12-15`, `backend/app/config.py`, `vision/tujya_vision/*.py`, `docs/MCP.md`, `docs/INFRA.md` | Scan + interactions + webcam + Swagger : OK (29 s) ; chat : 1re réponse 83,9 s (modèles froids), ensuite 5,6 s, Major cité, dose refusée ; MCP 2 min 34 -> 11 s après D72 ; MLflow : 4 runs vision, registre v2/v1 ; DVC à jour et synchronisé ; CI/CD vertes |
-| 2026-10-28 | Session 4, tâche 5 : rapports techniques | Deux rapports en français, avec uniquement les chiffres des docs et de MLflow : module 1 (données, étiquetage automatique et audit, modèles, seuil, ONNX, API, DVC, MLflow, Compose, CI/CD, web, déploiement local, limites) et module 2 (corpus, découpage, récupération, agent, sécurité, MCP, LLM, benchmark, chat, limites) ; schémas Mermaid rendus en PNG (architecture, chaîne de vision, graphe de l'agent) ; PDF par impression Chromium (pas de pandoc) ; docs/RAG.md et AGENT.md remis à jour | `docs/rapports/*.md`, `docs/rapports/*.pdf`, `docs/rapports/diagrams/`, `docs/rapports/img/`, `frontend/scripts/build-reports.mjs`, `docs/RAG.md`, `docs/AGENT.md` | PDF module 1 : 11 pages, 9 figures ; module 2 : 8 pages, 6 figures ; ouverts et relus (images visibles) ; case « Rapport technique » cochée |
-| 2026-10-28 | Session 4, tâche 6 : bonus toxicité | Données Tox21 (MoleculeNet, licence non explicite, D73) dans DVC ; empreintes Morgan RDKit + un LightGBM par test, split par scaffold, ROC-AUC par test, MLflow `tujya-tox`, modèle enregistré `tujya-tox21` et publié dans `models/tox21` ; structures des 82 principes actifs depuis PubChem ; outil `predict_toxicity` (agent, MCP, `POST /api/toxicity`), page web « Toxicity » (une carte par molécule) ; phrases de l'agent sur la prédiction écrites par le code, règle « jamais non toxique » (D74) | `backend/app/toxicity.py`, `backend/app/routers/toxicity.py`, `backend/app/rag/{tools,agent,safety,runtime}.py`, `backend/app/mcp_server.py`, `backend/scripts/train_tox21.py`, `backend/scripts/fetch_ingredient_smiles.py`, `backend/tests/test_toxicity.py`, `config/ingredient_smiles.csv`, `data/tox21.dvc`, `frontend/src/pages/ToxicityPage.tsx`, `docs/TOXICITY.md` | 7 823 molécules, split 6 258 / 782 / 783 ; ROC-AUC test moyen **0,725** (0,647 à 0,822), validation 0,766 ; 82/82 principes actifs avec une structure (49 identiques à une molécule d'entraînement, 4 hors domaine) ; page testée par Playwright sur les conteneurs (2 molécules en 1,2 s) ; chat : réponses correctes après correction (le LLM lisait mal les probabilités) ; 113 tests backend |
-| 2026-10-29 | Session 4, tâche 7 : bonus synergie | Données DrugComb du pipeline : une seule source par expérience (DrugComb ; TDC en est une copie, r = 1,00 ; O'Neil diverge, r = 0,415), cible ZIP, médicaments avec structure, empreintes Morgan + 30 composantes de l'expression + tissu, **split en laissant des médicaments de côté**, LightGBM contre la moyenne ; règle de décision écrite avant l'entraînement (D75) ; `data/parquet` versionné par DVC ; MLflow `tujya-synergy` | `backend/scripts/train_synergy.py`, `data/parquet.dvc`, `docs/SYNERGY.md`, `docs/DECISIONS.md` | 323 339 expériences, 287 médicaments, 110 lignées ; test (93 597) : RMSE 5,189 contre 5,597 pour la moyenne (−7,3 %), r 0,377 ; règle non atteinte (≥ 10 %) : **pas d'outil `predict_synergy`**, résultat documenté |
-| 2026-11-01 | Session 5 : RAG agentique sur ChromaDB | Index vectoriel déplacé de pgvector vers **ChromaDB 1.5.9** (collection `tujya_chunks`, service compose `chroma` sur `127.0.0.1:8001`, dossier local sans serveur ; D76) ; graphe LangGraph **agentique** : planifier → agir (outils en parallèle) → évaluer les preuves → affiner (le LLM voit ce qui manque et choisit de nouvelles recherches), 2 tours au plus (D77) ; vitesse : planification par règles quand les médicaments sont connus, caches des embeddings de requête et des réponses, préchargement des modèles, contexte TLS construit une seule fois, filtre Chroma par liste d'identifiants (D78) ; corpus reconstruit sur ce PC après la perte du remote DVC (D80) | `backend/app/rag/` (`store`, `index`, `retrieval`, `agent`, `runtime`, `embeddings`, `tools`), `backend/app/{config,main,schemas,mcp_server}.py`, `backend/app/routers/chat.py`, `backend/tests/`, `backend/scripts/{bench_*,agent_probe}.py`, `docker-compose.yml`, `.github/workflows/ci.yml`, `docs/{RAG,AGENT,INFRA,BENCHMARK,DECISIONS,ROADMAP,QUESTIONS_JURY}.md` | 127 tests backend, ruff propre ; corpus 8 933 chunks, indexé en 486 s ; dense + filtre Recall@5 0,933, MRR 0,849 (0,928 / 0,852 avant) ; une recherche 101 ms (environ 400 avant) ; agent sur 80 questions : premiers mots 0,49 s (0,81 s avant), réponse médiane 2,54 s, 1 appel LLM par question (2 avant) ; 0 dose, 0 « sûr », 2/2 questions de dose refusées ; question hors sujet : second tour de recherche choisi par l'agent |
-| 2026-11-01 | Session 5 : refonte du site | Scène 3D three.js 0.186.1 (gélules en orbite, gélule qui s'ouvre et libère des particules, boîte de détection et ligne de scan, liens d'interaction), page publique, accueil connecté et page de connexion réécrits pour Tujya (ils décrivaient encore le projet de synergie), connexion et inscription sans défilement, cartes qui s'inclinent en 3D, polices embarquées (D79) | `frontend/src/three/pillScene.ts`, `frontend/src/{Scene3D,FloatCards}.tsx`, `frontend/src/pages/{Intro,Home,AuthPage,ChatPanel}.tsx`, `frontend/src/{styles.css,brand.ts,icons.tsx,api.ts}`, `frontend/package.json` | `npm run build` OK ; vérifié dans Chrome (Playwright) à 1440×900, 1366×768, 1280×720 et 390×844 : 0 px de défilement sur connexion et inscription, aucun débordement horizontal, aucune erreur de page ; captures de `docs/screenshots/` à refaire |
+> [!NOTE]
+> Le pipeline collecte uniquement des données scientifiques **publiques**, de façon polie et reproductible :
+> **API officielles d'abord**, fichiers officiels ensuite, **jamais de scraping HTML**.
+> Ce n'est pas un scraper généraliste : il refuse de contacter tout site qui n'est pas dans sa liste de sources.
 
 ---
 
-## Annexe : pipeline de données SynergyRx
+## 📑 Sommaire
 
-Data collection pipeline for **SynergyRx AI**: prediction of drug-combination synergy on
-cancer cell lines, enriched with knowledge extracted from PubMed.
+| | Section | | Section |
+|---|---|---|---|
+| 🧱 | [Architecture](#architecture) | 🌐 | [Comportement réseau](#comportement-reseau) |
+| 📦 | [Ce que vous obtenez](#ce-que-vous-obtenez) | ⏰ | [Planification et Docker](#planification-et-docker) |
+| ⚙️ | [Installation](#installation) | 🖥️ | [Application web](#application-web) |
+| ▶️ | [Utilisation](#utilisation) | 🛠️ | [Développement](#developpement) |
+| 📚 | [Sources](#sources) | 🗂️ | [Structure du dépôt](#structure-du-depot) |
 
-It collects public scientific data from a fixed list of sources, politely and reproducibly:
-official APIs first, official bulk files second, and no HTML scraping. It is not a
-general-purpose web scraper and refuses to talk to any host that is not one of its sources.
+---
 
-### What you get
+<a id="architecture"></a>
 
-Everything the pipeline produces is in one folder, `data/`, with one sub-folder per file
-format. The extension of a file tells you where it is:
+## 🧱 Architecture
+
+Le projet a **trois couches**. Chacune lit uniquement la sortie de la précédente.
+
+| Couche | Dossier | Rôle |
+|---|---|---|
+| 1️⃣ Pipeline de données | `src/tujya_data/` | Collecter, valider et nettoyer les données dans `data/` |
+| 2️⃣ Application web | `backend/` et `frontend/` | Lire les tables de `data/parquet` et les servir avec comptes et rôles |
+| 3️⃣ Modélisation 🟡 *prévue* | à venir | Entraîner et comparer les modèles sur les mêmes tables |
+
+### 🔭 Vue d'ensemble
+
+```mermaid
+flowchart LR
+    subgraph SRC["Sources publiques"]
+        S1["DrugComb, TDC, O'Neil, NCI-ALMANAC"]
+        S2["DepMap / CCLE"]
+        S3["PubChem, ChEMBL"]
+        S4["PubMed, Europe PMC"]
+    end
+
+    subgraph PIPE["1. Pipeline de données (CLI tujya)"]
+        P1["fetch<br/>télécharger, analyser, valider"]
+        P2["clean<br/>SMILES, noms, paires, scores"]
+        P3["literature<br/>résumés, phrases, mentions"]
+        P4["report et export<br/>qualité, licences, JSON"]
+    end
+
+    subgraph DATA["data/"]
+        D1["raw, interim<br/>dossiers de travail"]
+        D2["parquet<br/>tables pour modéliser"]
+        D3["csv, json, reports"]
+    end
+
+    subgraph APP["2. Application web"]
+        B["Backend FastAPI<br/>comptes, sessions, rôles"]
+        F["Frontend React<br/>intro, pages utilisateur, admin"]
+    end
+
+    subgraph ML["3. Modélisation (prévue)"]
+        M["LightGBM, MLP, GNN, fusion"]
+    end
+
+    SRC --> P1 --> D1 --> P2 --> D2
+    D2 --> P3 --> P4 --> D3
+    D2 --> B --> F
+    D2 --> M
+```
+
+<a id="schema-pipeline"></a>
+
+### 🔄 Le pipeline en 5 étapes
+
+`fetch` travaille par étapes, car chaque étape a besoin du résultat de la précédente.
+
+```mermaid
+flowchart TD
+    A["Étape 1<br/>Combinaisons et lignées<br/>DrugComb, TDC, O'Neil, NCI-ALMANAC, DepMap"]
+    B["Étape 2<br/>PubChem résout les noms de médicaments"]
+    C["Étape 3<br/>ChEMBL cherche les InChIKey"]
+    D["clean<br/>construit data/parquet"]
+    E["Étape 4<br/>PubMed, requêtes bâties sur la table des médicaments"]
+    F["Étape 5<br/>Europe PMC et PubTator pour les PMID trouvés"]
+    A --> B --> C --> D --> E --> F
+```
+
+Dans chaque connecteur, les mêmes quatre étapes s'exécutent : `discover` → `fetch` → `parse` → `validate`.
+Les fichiers bruts ne sont **jamais modifiés** ; le manifeste garde le SHA-256, la taille, l'URL, la version et la licence.
+
+```mermaid
+flowchart LR
+    H["Client HTTP<br/>limites de débit, reprises, cache,<br/>robots.txt, coupe-circuit"] --> R["data/raw<br/>fichiers tels que téléchargés"]
+    R --> I["data/interim<br/>une table validée par source"]
+    I --> Q["nettoyage<br/>smiles, drugs, cell_lines,<br/>pairs, scores"]
+    Q --> T["data/parquet<br/>synergy_pairs, drugs, cell_lines,<br/>expression, abstracts"]
+    R -.empreinte.-> MF["manifest.json<br/>LICENSES.md"]
+```
+
+<a id="schema-application"></a>
+
+### 🖥️ Application web
+
+```mermaid
+flowchart LR
+    U["Navigateur"] -->|"/api (proxy de dev)"| FE["Frontend React<br/>localhost:5173"]
+    FE --> BE["Backend FastAPI<br/>127.0.0.1:8000"]
+    BE --> DB[("app.db<br/>utilisateurs et sessions")]
+    BE -->|"lecture seule"| PQ["data/parquet"]
+    BE --> PUB["/api/public/summary<br/>seule donnée lisible sans compte"]
+```
+
+| Partie | Responsabilité |
+|---|---|
+| 🌍 Page d'introduction publique | Affiche seulement la taille des tables, sans compte |
+| 🔐 Connexion / inscription | Un nouveau compte est toujours un utilisateur simple |
+| 👤 Pages utilisateur (`/home`) | Accueil, médicaments, lignées, profil |
+| 🛡️ Pages admin (`/admin`) | Tableau de bord, création d'administrateurs, rôles, mots de passe, désactivation et suppression |
+| 🍪 Session | Cookie `HttpOnly` lié à une ligne en base : désactiver un compte le déconnecte aussitôt |
+| ✅ Autorisation | Le rôle est vérifié par l'API à chaque requête |
+
+### 🧠 Couche de modélisation 🟡 *prévue*
+
+> [!WARNING]
+> Cette couche **n'existe pas encore** dans ce dépôt. Elle lira `data/parquet` et comparera quatre modèles sous trois protocoles de validation, pour isoler l'effet de la littérature.
+
+```mermaid
+flowchart LR
+    T["data/parquet"] --> SP["3 découpages<br/>paire, médicament, lignée inconnus"]
+    SP --> M1["LightGBM<br/>baseline"]
+    SP --> M2["MLP<br/>type DeepSynergy"]
+    SP --> M3["GNN<br/>type DeepDDS"]
+    SP --> M4["Fusion V3<br/>GNN + cellule + littérature"]
+    M1 --> E["Évaluation<br/>RMSE, MAE, Pearson, AUROC, AUPRC"]
+    M2 --> E
+    M3 --> E
+    M4 --> E
+    E --> OUT["Score, classe,<br/>intervalle d'incertitude"]
+```
+
+| Version | Entrées | Question posée |
+|---|---|---|
+| **V1** | Chimie seule | Que vaut la structure moléculaire seule ? |
+| **V2** | Chimie + lignée | Qu'apporte le profil de la cellule ? |
+| **V3** 🔬 | Chimie + lignée + littérature | **Les connaissances PubMed aident-elles, surtout pour un médicament jamais vu ?** |
+
+La différence **V3 − V2**, répétée sur plusieurs graines, est le résultat scientifique principal.
+Positif, nul ou négatif : tout est acceptable s'il est rapporté avec des chiffres.
+
+> [!CAUTION]
+> Les prédictions sont des **hypothèses in silico** à valider en laboratoire. Ce n'est jamais un conseil médical.
+
+---
+
+<a id="ce-que-vous-obtenez"></a>
+
+## 📦 Ce que vous obtenez
+
+Tout ce que produit le pipeline est dans **un seul dossier**, `data/`, avec un sous-dossier par format.
+L'extension du fichier indique où il se trouve.
 
 ```
 data/
-  parquet/   the tables to model on
-  csv/       coverage, conflicts, review queues, sentences to label
-  json/      files for the frontend
-  reports/   the data quality report (Markdown and HTML), the annotation guide
+  parquet/   les tables pour modéliser
+  csv/       couverture, conflits, files de relecture, phrases à annoter
+  json/      fichiers pour le frontend
+  reports/   rapport qualité (Markdown et HTML), guide d'annotation
 
-  raw/       files exactly as downloaded, per source      interim/   one validated table per source
-  manual/    files you place yourself                     cache/ state/   bookkeeping
+  raw/       fichiers tels que téléchargés, par source     interim/   une table validée par source
+  manual/    fichiers que vous déposez vous-même           cache/ state/   suivi interne
 ```
 
-| File | Content |
+<details>
+<summary><b>📋 Détail des fichiers produits</b></summary>
+
+| Fichier | Contenu |
 |---|---|
-| `data/parquet/synergy_pairs.parquet` | One row per drug pair, cell line, source and study. Bliss, Loewe, HSA and ZIP in separate columns |
-| `data/parquet/drugs.parquet` | One row per drug: standardised SMILES, InChIKey, PubChem CID, ChEMBL ID, synonyms, validity flag |
-| `data/parquet/cell_lines.parquet` | Names, tissue, DepMap identifier |
-| `data/parquet/expression.parquet` | Expression matrix for the cell lines in use |
-| `data/parquet/abstracts.parquet`, `candidate_sentences.parquet` | PubMed abstracts, and sentences mentioning two or more drugs |
-| `data/csv/coverage.csv`, `conflicts.csv`, `source_agreement.csv` | Distinct drugs and cell lines per source; records that disagree; agreement between sources |
-| `data/csv/drug_review_queue.csv`, `cell_line_review_queue.csv` | Names a person should check |
-| `data/csv/sample_sentences.csv` | Stratified sentences to label by hand (also `data/json/sample_sentences.jsonl`) |
-| `data/json/*.json` | `drugs.json`, `cell_lines.json`, `mock_predictions_seed.json`, `citations.json` for the frontend |
-| `data/reports/data_quality.md` / `.html` | The data quality report; `annotation_guide.md` explains the labels |
-| `manifest.json`, `LICENSES.md` | SHA-256, size, URL, version, retrieval time and licence of every file |
+| `data/parquet/synergy_pairs.parquet` | Une ligne par paire de médicaments, lignée, source et étude. Bliss, Loewe, HSA et ZIP dans des colonnes séparées |
+| `data/parquet/drugs.parquet` | Une ligne par médicament : SMILES standardisé, InChIKey, PubChem CID, ChEMBL ID, synonymes, indicateur de validité |
+| `data/parquet/cell_lines.parquet` | Noms, tissu, identifiant DepMap |
+| `data/parquet/expression.parquet` | Matrice d'expression des lignées utilisées |
+| `data/parquet/abstracts.parquet`, `candidate_sentences.parquet` | Résumés PubMed, et phrases citant au moins deux médicaments |
+| `data/csv/coverage.csv`, `conflicts.csv`, `source_agreement.csv` | Médicaments et lignées distincts par source ; enregistrements en désaccord ; accord entre sources |
+| `data/csv/drug_review_queue.csv`, `cell_line_review_queue.csv` | Noms qu'une personne doit vérifier |
+| `data/csv/sample_sentences.csv` | Phrases stratifiées à annoter à la main (aussi `data/json/sample_sentences.jsonl`) |
+| `data/json/*.json` | `drugs.json`, `cell_lines.json`, `mock_predictions_seed.json`, `citations.json` pour le frontend |
+| `data/reports/data_quality.md` / `.html` | Rapport qualité ; `annotation_guide.md` explique les étiquettes |
+| `manifest.json`, `LICENSES.md` | SHA-256, taille, URL, version, date de récupération et licence de chaque fichier |
 
-Every column is explained in [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md).
+</details>
 
-`data/raw` and `data/interim` are the pipeline's working folders and keep one sub-folder per
-source. `manifest.json` and `LICENSES.md` sit next to `data/` rather than inside it: they
-hold no data, they describe the folder, and unlike `data/` they can be committed.
-`--data-dir` moves the whole folder; `parquet_dir`, `csv_dir`, `json_dir` and `reports_dir`
-in `config.yaml` can point one format elsewhere.
+📖 Chaque colonne est expliquée dans [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md).
 
-### Setup
+`data/raw` et `data/interim` sont les dossiers de travail du pipeline, avec un sous-dossier par source.
+`manifest.json` et `LICENSES.md` sont à côté de `data/` : ils ne contiennent pas de données, ils
+décrivent le dossier, et contrairement à `data/` ils peuvent être commités.
+`--data-dir` déplace tout le dossier ; `parquet_dir`, `csv_dir`, `json_dir` et `reports_dir`
+dans `config.yaml` permettent de déplacer un seul format.
 
-Requires Python 3.11 or newer.
+---
+
+<a id="installation"></a>
+
+## ⚙️ Installation
+
+Python **3.11 ou plus récent** requis.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate            # Windows PowerShell: .venv\Scripts\Activate.ps1
+source .venv/bin/activate            # Windows PowerShell : .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-cp .env.example .env                 # then edit .env
+cp .env.example .env                 # puis modifier .env
 ```
 
-Put two values in `.env` (it is git-ignored and never logged):
+Renseignez deux valeurs dans `.env` (ignoré par git, jamais écrit dans les logs) :
 
-- `CONTACT_EMAIL`: sent in the User-Agent so a provider can reach you. **Required**: live
-  requests are refused without it.
-- `NCBI_API_KEY`: optional, free from your NCBI account settings. Raises the E-utilities
-  limit from about 3 to about 10 requests per second.
+| Variable | Obligatoire | Rôle |
+|---|---|---|
+| `CONTACT_EMAIL` | ✅ **oui** | Envoyé dans le User-Agent pour que les fournisseurs puissent vous joindre. Sans elle, les requêtes réelles sont refusées |
+| `NCBI_API_KEY` | ➖ optionnelle | Gratuite depuis votre compte NCBI. Passe la limite E-utilities d'environ 3 à environ 10 requêtes par seconde |
 
-Then check the machine:
+Puis vérifiez la machine :
 
 ```bash
-synergyrx preflight
+tujya preflight
 ```
 
-### Running it
+---
+
+<a id="utilisation"></a>
+
+## ▶️ Utilisation
 
 ```bash
-synergyrx fetch --sample 100 --dry-run   # print the plan; requests and writes nothing
-synergyrx fetch --sample 100             # small sample of every enabled source
-synergyrx fetch                          # full run (about 740 MB for stage 1)
-synergyrx clean                          # build the processed tables (data/parquet)
-synergyrx fetch --source pubmed --source europepmc
-synergyrx literature                     # abstracts, candidate sentences, annotation sample
-synergyrx report                         # quality report, coverage, conflicts, LICENSES.md
-synergyrx export                         # frontend JSON
-synergyrx summary                        # final report of everything collected
+tujya fetch --sample 100 --dry-run   # affiche le plan, ne fait aucune requête ni écriture
+tujya fetch --sample 100             # petit échantillon de chaque source activée
+tujya fetch                          # exécution complète (environ 740 Mo pour l'étape 1)
+tujya clean                          # construit les tables nettoyées (data/parquet)
+tujya fetch --source pubmed --source europepmc
+tujya literature                     # résumés, phrases candidates, échantillon à annoter
+tujya report                         # rapport qualité, couverture, conflits, LICENSES.md
+tujya export                         # JSON pour le frontend
+tujya summary                        # rapport final de tout ce qui a été collecté
 ```
 
-Or everything in one go, incrementally: `synergyrx update`.
+⚡ Ou tout en une fois, de façon incrémentale : `tujya update`.
 
-`fetch` runs in stages, because later sources need earlier results:
+Les étapes de `fetch` (voir le [schéma du pipeline](#schema-pipeline)) :
 
-1. Drug combinations and cell lines: DrugComb, TDC, O'Neil, NCI-ALMANAC, DepMap.
-2. PubChem resolves the drug names found in stage 1.
-3. ChEMBL looks up the InChIKeys PubChem returned.
-4. PubMed, with queries built from the cleaned drug table (so run `clean` first).
-5. Europe PMC (open-access status) and PubTator, for the PMIDs PubMed returned.
+1. Combinaisons de médicaments et lignées : DrugComb, TDC, O'Neil, NCI-ALMANAC, DepMap.
+2. PubChem résout les noms de médicaments trouvés à l'étape 1.
+3. ChEMBL cherche les InChIKey renvoyés par PubChem.
+4. PubMed, avec des requêtes bâties sur la table nettoyée des médicaments (**lancez donc `clean` avant**).
+5. Europe PMC (accès libre) et PubTator, pour les PMID renvoyés par PubMed.
 
-#### Commands
+<details>
+<summary><b>🧰 Toutes les commandes</b></summary>
 
-| Command | What it does |
+| Commande | Ce qu'elle fait |
 |---|---|
-| `sources` | List sources, licences and state. `--check` probes every link and rewrites `docs/SOURCES.md` |
-| `fetch` | Download, parse and validate into `data/raw` and `data/interim`. `--source`, `--sample N`, `--dry-run`, `--refresh` |
-| `validate` | Re-check raw file hashes against the manifest and interim rows against their schemas |
-| `clean` | Build the processed tables in `data/parquet` |
-| `literature` | Abstract store, sentence segmentation, drug mentions, annotation sample |
-| `report` | Quality report, coverage, conflicts, licence registry |
-| `export` | Frontend JSON |
-| `status` | State of every connector and what is on disk |
-| `summary` | Final report of everything collected (`--json` for machines) |
-| `preflight` | Disk space, permissions, identity, tooling |
-| `update` | All of the above, incrementally. For cron or CI |
+| `sources` | Liste les sources, licences et états. `--check` teste chaque lien et réécrit `docs/SOURCES.md` |
+| `fetch` | Télécharge, analyse et valide dans `data/raw` et `data/interim`. Options : `--source`, `--sample N`, `--dry-run`, `--refresh` |
+| `validate` | Revérifie les empreintes des fichiers bruts contre le manifeste et les lignes interim contre leurs schémas |
+| `clean` | Construit les tables nettoyées dans `data/parquet` |
+| `literature` | Stock de résumés, segmentation en phrases, mentions de médicaments, échantillon d'annotation |
+| `report` | Rapport qualité, couverture, conflits, registre des licences |
+| `export` | JSON pour le frontend |
+| `status` | État de chaque connecteur et contenu du disque |
+| `summary` | Rapport final de tout ce qui a été collecté (`--json` pour les machines) |
+| `preflight` | Espace disque, permissions, identité, outils |
+| `update` | Tout ce qui précède, de façon incrémentale. Pour cron ou CI |
 
-Global options go before the command: `--config`, `--set key=value`, `--data-dir`,
-`--log-level`, `--text-logs`. Any setting in `config.yaml` can be overridden:
+Les options globales se placent avant la commande : `--config`, `--set clé=valeur`, `--data-dir`,
+`--log-level`, `--text-logs`. Tout réglage de `config.yaml` peut être remplacé :
 
 ```bash
-synergyrx --set sources.tdc.enabled=false --set "http.hosts[zenodo.org].rate=0.05" fetch
+tujya --set sources.tdc.enabled=false --set "http.hosts[zenodo.org].rate=0.05" fetch
 ```
 
-Logs are JSON lines on stderr; tables and reports go to stdout.
+Les logs sont des lignes JSON sur stderr ; les tables et rapports vont sur stdout.
 
-#### Second runs are cheap
+</details>
 
-Nothing is downloaded or duplicated twice. Raw files are skipped when their hash matches the
-manifest, API answers are cached on disk and revalidated with ETag / Last-Modified, lookups
-(including "not found") are remembered, interrupted downloads resume with an HTTP Range
-request, and PubMed is only asked for records entered since the previous run.
+### 💸 Les relances sont peu coûteuses
 
-### Sources
+Rien n'est téléchargé ni dupliqué deux fois :
 
-| Source | Access | On by default | Licence |
+- les fichiers bruts sont ignorés si leur empreinte correspond au manifeste ;
+- les réponses d'API sont en cache et revalidées avec ETag / Last-Modified ;
+- les recherches (y compris « introuvable ») sont mémorisées ;
+- les téléchargements interrompus reprennent avec une requête HTTP Range ;
+- PubMed n'est interrogé que pour les notices ajoutées depuis la dernière exécution.
+
+---
+
+<a id="sources"></a>
+
+## 📚 Sources
+
+| Source | Accès | Activée par défaut | Licence |
 |---|---|---|---|
-| DrugComb v1.4 | Zenodo bulk file, pinned | yes | CC BY 4.0 |
-| TDC DrugSyn | Harvard Dataverse file (loaded with PyTDC when installed) | yes | CC BY 4.0 |
-| O'Neil / DeepSynergy | bulk CSV | yes | none stated: research use, do not redistribute |
-| NCI-ALMANAC | **manual download** | yes | US Government work |
-| DepMap / CCLE 24Q4 | Figshare+ API and files | yes | CC BY 4.0 |
-| PubChem | PUG-REST API | yes | public domain |
-| ChEMBL | web services API | yes | CC BY-SA 3.0 |
-| PubMed | E-utilities API | yes | NLM terms |
-| Europe PMC | REST API | yes | Europe PMC terms |
-| GDSC (Cell Model Passports) | bulk file | no | not verified |
-| DDInter | bulk CSV, gated | no | CC BY-NC-SA 4.0 |
-| DrugBank | **file you supply** | no | DrugBank licence |
-| PubMed baseline | bulk XML, very large, **manual download** | no | NLM terms |
-| PubTator 3 | API | no | public domain |
+| **DrugComb v1.4** | Fichier Zenodo, version fixée | ✅ | CC BY 4.0 |
+| **TDC DrugSyn** | Fichier Harvard Dataverse (chargé avec PyTDC si installé) | ✅ | CC BY 4.0 |
+| **O'Neil / DeepSynergy** | CSV | ✅ | aucune indiquée : usage de recherche, ne pas redistribuer |
+| **NCI-ALMANAC** | ✋ **téléchargement manuel** | ✅ | Travail du gouvernement américain |
+| **DepMap / CCLE 24Q4** | API et fichiers Figshare+ | ✅ | CC BY 4.0 |
+| **PubChem** | API PUG-REST | ✅ | domaine public |
+| **ChEMBL** | API web services | ✅ | CC BY-SA 3.0 |
+| **PubMed** | API E-utilities | ✅ | conditions NLM |
+| **Europe PMC** | API REST | ✅ | conditions Europe PMC |
+| GDSC (Cell Model Passports) | fichier | ⬜ | non vérifiée |
+| DDInter | CSV, accès conditionné | ⬜ | CC BY-NC-SA 4.0 |
+| DrugBank | ✋ **fichier que vous fournissez** | ⬜ | licence DrugBank |
+| PubMed baseline | XML très volumineux, ✋ **téléchargement manuel** | ⬜ | conditions NLM |
+| PubTator 3 | API | ⬜ | domaine public |
 
-Link statuses, endpoints, rate limits and what was found for each source are in
-[docs/SOURCES.md](docs/SOURCES.md). Licences and citations are in `LICENSES.md`.
+🔗 États des liens, points d'accès, limites de débit et résultats par source : [docs/SOURCES.md](docs/SOURCES.md).
+Licences et citations : `LICENSES.md`.
 
-#### Manual steps
+### ✋ Étapes manuelles
 
-- **NCI-ALMANAC.** robots.txt of `wiki.nci.nih.gov` disallows automated downloads. Open the
-  [NCI-ALMANAC page](https://wiki.nci.nih.gov/spaces/NCIDTPdata/pages/338237347/NCI-ALMANAC)
-  in a browser and save `ComboDrugGrowth_Nov2017.zip` (and, optionally,
-  `ComboCompoundNames_small.txt`) into `data/manual/nci_almanac/`, then run `fetch` again.
-- **PubMed baseline** (optional). `ftp.ncbi.nlm.nih.gov` disallows automated clients in
-  robots.txt. Download the files you listed in `sources.pubmed_baseline.options.files`
-  yourself and save them into `data/manual/pubmed_baseline/`.
-- **DrugBank.** Never downloaded. If you hold a licence, save the vocabulary export as
-  `data/manual/drugbank/drugbank vocabulary.csv` and set `sources.drugbank.enabled: true`.
-- **DDInter.** Read its [terms](https://ddinter2.scbdd.com/terms/) (non-commercial,
-  share-alike), then set `sources.ddinter.enabled: true` and `terms_acknowledged: true`.
-- **TDC through PyTDC.** PyTDC only installs on Python 3.11 / 3.12:
-  `pip install -e ".[tdc]"`. Without it the same file is read by a built-in loader.
-- **Unresolved drugs and cell lines.** Work through `data/csv/drug_review_queue.csv` and
-  `data/csv/cell_line_review_queue.csv`, record decisions in
-  `config/manual_drug_overrides.csv` and `config/cell_line_aliases.csv`, and run `clean`.
+> [!IMPORTANT]
+> Certaines sources interdisent le téléchargement automatisé. Le pipeline ne contourne **jamais** ces règles.
 
-### How it behaves on the network
+- **NCI-ALMANAC.** Le robots.txt de `wiki.nci.nih.gov` interdit les téléchargements automatiques. Ouvrez la
+  [page NCI-ALMANAC](https://wiki.nci.nih.gov/spaces/NCIDTPdata/pages/338237347/NCI-ALMANAC)
+  dans un navigateur, enregistrez `ComboDrugGrowth_Nov2017.zip` (et, en option,
+  `ComboCompoundNames_small.txt`) dans `data/manual/nci_almanac/`, puis relancez `fetch`.
+- **PubMed baseline** (optionnel). `ftp.ncbi.nlm.nih.gov` interdit les clients automatisés dans son
+  robots.txt. Téléchargez vous-même les fichiers listés dans `sources.pubmed_baseline.options.files`
+  et placez-les dans `data/manual/pubmed_baseline/`.
+- **DrugBank.** Jamais téléchargé. Si vous avez une licence, enregistrez l'export du vocabulaire sous
+  `data/manual/drugbank/drugbank vocabulary.csv` et mettez `sources.drugbank.enabled: true`.
+- **DDInter.** Lisez ses [conditions](https://ddinter2.scbdd.com/terms/) (non commercial,
+  partage à l'identique), puis mettez `sources.ddinter.enabled: true` et `terms_acknowledged: true`.
+- **TDC via PyTDC.** PyTDC s'installe seulement sur Python 3.11 / 3.12 :
+  `pip install -e ".[tdc]"`. Sans lui, le même fichier est lu par un chargeur intégré.
+- **Médicaments et lignées non résolus.** Traitez `data/csv/drug_review_queue.csv` et
+  `data/csv/cell_line_review_queue.csv`, notez vos décisions dans
+  `config/manual_drug_overrides.csv` et `config/cell_line_aliases.csv`, puis relancez `clean`.
 
-- Identifies itself: `synergyrx-data/<version> (research data pipeline; mailto:<you>)`.
-- Per-host token-bucket rate limits and connection caps, run at 90 % of each limit; a
-  robots.txt `Crawl-delay` always wins when it is slower.
-- Exponential backoff with jitter; honours `Retry-After`, 429 and 503.
-- A circuit breaker pauses a source that keeps failing.
-- Timeouts, maximum response sizes and content-type checks on every response.
-- robots.txt is checked before any HTML page or bulk file is requested.
-- A 401 / 403, CAPTCHA, login page or bot check stops the source. It is reported as
-  "needs attention" and never retried or worked around.
-- No cookies, no credentials, no proxies, no browser impersonation.
+---
 
-A source that fails does not stop the run: the others continue and `status` shows which one
-needs attention and why. `fetch` and `update` exit non-zero in that case.
+<a id="comportement-reseau"></a>
 
-### Scheduling
+## 🌐 Comportement réseau
 
-`synergyrx update` is safe to run repeatedly. Examples:
-[docs/examples/crontab.txt](docs/examples/crontab.txt) and
+| Règle | Détail |
+|---|---|
+| 🪪 Identification | `tujya-data/<version> (research data pipeline; mailto:<vous>)` |
+| 🚦 Débit | Limites par hôte (token bucket) et plafonds de connexions, à 90 % de chaque limite ; un `Crawl-delay` du robots.txt l'emporte s'il est plus lent |
+| 🔁 Reprises | Backoff exponentiel avec gigue ; respecte `Retry-After`, 429 et 503 |
+| 🔌 Coupe-circuit | Met en pause une source qui échoue sans cesse |
+| 🧱 Garde-fous | Délais d'attente, tailles maximales et contrôle du type de contenu sur chaque réponse |
+| 🤖 robots.txt | Vérifié avant toute page HTML ou fichier volumineux |
+| 🛑 Blocage | Un 401 / 403, CAPTCHA, page de connexion ou contrôle anti-robot arrête la source : elle passe en « needs attention », jamais relancée ni contournée |
+| 🚫 Interdits | Pas de cookies, pas d'identifiants, pas de proxys, pas d'imitation de navigateur |
+
+Une source en échec n'arrête pas l'exécution : les autres continuent et `status` indique laquelle
+demande attention et pourquoi. `fetch` et `update` se terminent alors avec un code non nul.
+
+---
+
+<a id="planification-et-docker"></a>
+
+## ⏰ Planification et Docker
+
+`tujya update` peut être relancé sans risque. Exemples :
+[docs/examples/crontab.txt](docs/examples/crontab.txt) et
 [docs/examples/github-actions-update.yml](docs/examples/github-actions-update.yml).
 
-### Docker
-
 ```bash
-docker build -t synergyrx-data .
-docker run --rm --env-file .env -v "$PWD/data:/app/data" synergyrx-data fetch --sample 100
+docker build -t tujya-data .
+docker run --rm --env-file .env -v "$PWD/data:/app/data" tujya-data fetch --sample 100
 ```
 
-Add `--build-arg INSTALL_TDC=1` to include PyTDC. Secrets are passed at run time and are
-not part of the image.
+Ajoutez `--build-arg INSTALL_TDC=1` pour inclure PyTDC. Les secrets sont passés à l'exécution et
+ne font pas partie de l'image.
 
-### Web app
+---
 
-A FastAPI backend (`backend/`) and a React frontend (`frontend/`) on top of the processed
-tables. They are separate from the pipeline: the backend has its own virtual environment and
-only ever reads the tables in `data/parquet`.
+<a id="application-web"></a>
+
+## 🖥️ Application web
+
+Un backend **FastAPI** (`backend/`) et un frontend **React** (`frontend/`) au-dessus des tables nettoyées
+(voir le [schéma de l'application](#schema-application)). Ils sont séparés du pipeline : le backend a son propre
+environnement virtuel et lit uniquement les tables de `data/parquet`.
 
 ```bash
-# Terminal 1: API on http://127.0.0.1:8000 (Swagger UI at /docs, schema at /openapi.json)
+# Terminal 1 : API sur http://127.0.0.1:8000 (documentation interactive sur /api/docs)
 cd backend
 python -m venv .venv
-.venv\Scripts\Activate.ps1           # Linux / macOS: source .venv/bin/activate
+.venv\Scripts\Activate.ps1           # Linux / macOS : source .venv/bin/activate
 pip install -r requirements-dev.txt
-uvicorn app.main:app --host 127.0.0.1 --reload
+uvicorn app.main:app --reload
 
-# Terminal 2: site on http://localhost:5173
+# Terminal 2 : site sur http://localhost:5173
 cd frontend
 npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>. The dev server forwards `/api`, `/docs` and `/openapi.json` to
-the backend, so the browser talks to a single origin (Swagger: <http://localhost:5173/docs>;
-the old address `/api/docs` redirects there). Visitors first see a public introduction page; it shows the table
-sizes (`/api/public/summary`), which is the only data readable without an account.
+Ouvrez <http://localhost:5173>. Le serveur de développement redirige `/api` vers le backend : le navigateur
+ne parle qu'à une seule origine. Les visiteurs voient d'abord une page d'introduction publique ; elle affiche la
+taille des tables (`/api/public/summary`), seule donnée lisible sans compte.
 
-The site is branded **Tujya**. The logo files in `frontend/src/assets/` and the favicon are
-cut from `photo.png`, the name is in `frontend/src/brand.ts`, and the colours, all taken from
-the logo, are the tokens at the top of `frontend/src/styles.css`.
+🎨 Le site porte la marque **Tujya**. Les logos de `frontend/src/assets/` et le favicon sont découpés dans
+`photo.png`, le nom est dans `frontend/src/brand.ts`, et les couleurs, toutes tirées du logo, sont les variables
+en haut de `frontend/src/styles.css`.
 
-The first start creates two accounts in `backend/app.db`:
+### 🔑 Comptes créés au premier démarrage (dans `backend/app.db`)
 
-| Email | Password | Lands on |
+| Email | Mot de passe | Arrive sur |
 |---|---|---|
-| `admin@gmail.com` | `admin` | `/admin`: dashboard, user management and activity log |
-| `user@gmail.com` | `user` | `/home`: home page, drugs, cell lines, profile |
+| `admin@gmail.com` | `admin` | `/admin` : tableau de bord et gestion des utilisateurs |
+| `user@gmail.com` | `user` | `/home` : accueil, médicaments, lignées, profil |
 
-**Change the administrator password before anyone else can reach the server** (Admin, then
-My account). The API prints a warning at every start until you do. To start with other
-credentials, copy `backend/.env.example` to `backend/.env` before the first start.
+> [!CAUTION]
+> **Changez le mot de passe administrateur avant que quiconque puisse atteindre le serveur** (Admin, puis
+> Mon compte). L'API affiche un avertissement à chaque démarrage tant qu'il n'est pas changé.
+> Pour démarrer avec d'autres identifiants, copiez `backend/.env.example` vers `backend/.env` avant le premier démarrage.
 
-- Anyone can sign up; a new account is always a regular user. Only an administrator can
-  create administrators, change roles, reset passwords, deactivate or delete accounts.
-- Administrators can watch what every account does under Admin > Activity (or the
-  Activity button next to a user): sign-ins and failed sign-ins, scans, interaction checks,
-  questions, toxicity predictions, profile changes and other administrators' actions, with
-  the time, browser and address. Only counts are kept, never a medicine name or the text of
-  a question; events older than 180 days are deleted at start-up
-  (`SYNERGYRX_ACTIVITY_RETENTION_DAYS`).
-- Passwords are stored as Argon2 hashes and can be replaced but never read back. New
-  passwords need at least 8 characters.
-- The session is an `HttpOnly` cookie backed by a row in the database, so resetting a
-  password or deactivating an account signs that user out immediately.
-- The role is checked by the API on every request; hiding a page in the frontend is only
-  for convenience.
+**Règles de sécurité**
 
-Checks: `python -m pytest` in `backend/` (API tests on a temporary database), and
-`npm run build` in `frontend/` (type check and production build).
+- 👥 Tout le monde peut s'inscrire ; un nouveau compte est toujours un utilisateur simple. Seul un administrateur
+  peut créer des administrateurs, changer les rôles, réinitialiser les mots de passe, désactiver ou supprimer des comptes.
+- 🔒 Les mots de passe sont stockés en hachage Argon2 : on peut les remplacer, jamais les relire. Minimum 8 caractères.
+- 🍪 La session est un cookie `HttpOnly` lié à une ligne en base : réinitialiser un mot de passe ou désactiver un
+  compte déconnecte l'utilisateur immédiatement.
+- ✅ Le rôle est vérifié par l'API à chaque requête ; masquer une page dans le frontend ne sert qu'au confort.
 
-### Development
+Vérifications : `python -m pytest` dans `backend/` (tests d'API sur une base temporaire), et
+`npm run build` dans `frontend/` (contrôle des types et build de production).
+
+---
+
+<a id="developpement"></a>
+
+## 🛠️ Développement
 
 ```bash
-make check        # lint, type check, unit tests (mocked HTTP, no network)
-make live         # optional smoke tests against the real services, tiny samples
+make check        # lint, typage, tests unitaires (HTTP simulé, sans réseau)
+make live         # tests de fumée optionnels sur les vrais services, petits échantillons
 pre-commit install
 ```
 
-Without `make` (plain Windows): `python -m ruff check src tests`, `python -m mypy`,
+Sans `make` (Windows simple) : `python -m ruff check src tests`, `python -m mypy`,
 `python -m pytest tests/unit`, `python -m pytest tests/live -m live`.
 
-Adding a source means writing one `Connector` subclass (`discover`, `fetch`, `parse`,
-`validate`) and registering it in `src/synergyrx_data/connectors/__init__.py`. Read
-[docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) first.
+➕ **Ajouter une source** = écrire une sous-classe `Connector` (`discover`, `fetch`, `parse`,
+`validate`) et l'enregistrer dans `src/tujya_data/connectors/__init__.py`. Lisez
+d'abord [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md).
 
-### Layout
+---
+
+<a id="structure-du-depot"></a>
+
+## 🗂️ Structure du dépôt
 
 ```
-config.yaml              settings (no secrets)        .env        secrets (git-ignored)
-src/synergyrx_data/
+config.yaml              réglages (sans secrets)       .env        secrets (ignoré par git)
+src/tujya_data/
   cli.py  pipeline.py  build.py  config.py  manifest.py
   http/         client, ratelimit, retry, cache, robots, circuit, guardrails
-  connectors/   one module per source
+  connectors/   un module par source
   cleaning/     smiles, drugs, cell_lines, pairs, scores
   literature/   queries, abstracts, sentences, mentions, annotation_export
   quality/      reports, drift, licenses, linkcheck
   export/       frontend
-tests/unit/     mocked HTTP        tests/live/   optional smoke tests
-backend/app/    FastAPI: accounts, sessions, admin routes, read access to data/parquet
-frontend/src/   React: introduction, sign in / sign up, user pages, admin pages
-data/           everything produced, by format: parquet, csv, json, reports; and the working
-                folders raw, interim, manual, cache, state   (git-ignored)
-docs/           PLAN, STATUS, DECISIONS, SOURCES, DATA_DICTIONARY, CODE_REVIEW, examples
+tests/unit/     HTTP simulé        tests/live/   tests de fumée optionnels
+backend/app/    FastAPI : comptes, sessions, routes admin, lecture de data/parquet
+frontend/src/   React : introduction, connexion / inscription, pages utilisateur, pages admin
+data/           tout ce qui est produit, par format : parquet, csv, json, reports ; et les
+                dossiers de travail raw, interim, manual, cache, state   (ignoré par git)
+docs/           PLAN, STATUS, DECISIONS, SOURCES, DATA_DICTIONARY, CODE_REVIEW, exemples
 ```
+
+---
+
+## 👥 Équipe
+
+🏫 TEK-UP University · Projet de Deep Learning
+
+| 👤 Membre | 🎯 Rôle principal |
+|---|---|
+| Mohamed Raed Bouhali | à définir par l'équipe |
+| Ilef Ben Hassen | à définir par l'équipe |
+| Melek Bouabid | à définir par l'équipe |
+
+**Répartition proposée** (à valider ensemble) :
+
+| Rôle | Responsabilités |
+|---|---|
+| 🧹 **A · Données et Machine Learning** | Collecte et nettoyage, découpages de test, baselines, métriques, calibration |
+| 🧠 **B · Deep Learning** | Modèles MLP et GNN, fusion multimodale, entraînement, interprétation |
+| 📚 **C · Littérature, démo et rapport** | Extraction PubMed, application web, rédaction du rapport |
+
+---
+
+<div align="center">
+
+🚨 **Avertissement** : les résultats de ce projet sont des hypothèses de recherche in silico, à valider en laboratoire.
+Ils ne constituent en aucun cas un conseil médical .
+
+</div>
