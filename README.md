@@ -1,6 +1,6 @@
 <div align="center">
 
-<<<<<<< HEAD
+
 # 💊 tujya-data
 
 **Pipeline de collecte de données pour Tujya**
