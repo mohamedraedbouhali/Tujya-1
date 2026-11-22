@@ -21,7 +21,8 @@ from app.limits import BodySizeLimit
 from app.rag.runtime import AgentHolder
 from app.reports import new_signing_key
 from app.routers import admin, auth, catalog, chat, demo, medicines, my, scan, toxicity, users
-from app.scanner import ScannerHolder
+from app.scanner import ScannerHolder, has_gpu, installed_providers
+from app.schemas import HealthStatus, ProvidersInfo
 from app.toxicity import ToxHolder
 
 DESCRIPTION = (
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalog.router)
     app.include_router(catalog.public_router)
     app.include_router(scan.router)
+    app.include_router(scan.public_router)
     app.include_router(medicines.router)
     app.include_router(demo.router)
     app.include_router(chat.router)
@@ -118,9 +120,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(my.router)
     app.include_router(my.public_router)
 
-    @app.get("/api/health", tags=["health"])
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    @app.get("/api/health", tags=["health"], response_model=HealthStatus)
+    def health() -> HealthStatus:
+        """The server, the hardware ONNX Runtime can use, and the models it would serve.
+
+        Always 200 while the process is alive, so it stays usable as a container health
+        check: missing models are reported as `present: false`, not as an error. The ONNX
+        files are described from `models/models.json` without loading them, so calling
+        this never pulls 33 MB of weights into memory.
+        """
+        holder: ScannerHolder = app.state.scanner
+        return HealthStatus(
+            status="ok",
+            api_version=app.version,
+            gpu=has_gpu(),
+            providers=ProvidersInfo(
+                available=installed_providers(),
+                requested=settings.onnx_providers,
+                gpu=has_gpu(),
+            ),
+            models_loaded=holder.loaded,
+            models=holder.describe(),
+            models_published_at=holder.published_at,
+        )
 
     return app
 

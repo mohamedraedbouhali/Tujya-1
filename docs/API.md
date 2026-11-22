@@ -70,6 +70,59 @@ The registered ONNX files keep their weights as MLflow external data; `publish` 
 model as one self-contained file and records its registry version, run id and SHA-256 in
 `models.json`, which `/api/scan` returns as `models`.
 
+## The names the module specification asks for
+
+`Guide_Projet_Deep_Learning_Avance_MLops.pdf` §5.1 lists four endpoints. They all exist,
+under the `/api` prefix the rest of the app uses:
+
+| Specification | Tujya | Note |
+|---|---|---|
+| `POST /predict` | `POST /api/predict` | the same handler as `POST /api/scan`, one OpenAPI entry each |
+| `POST /predict/visualize` | `POST /api/predict/visualize` | below |
+| `GET /model/metadata` | `GET /api/model/metadata` | below, **no sign-in** |
+| `GET /health` | `GET /api/health` | below, **no sign-in** |
+
+One deliberate difference: an upload that is not an image answers **415 Unsupported Media
+Type**, not 400. 415 is the status RFC 9110 defines for exactly this case, the frontend and
+the tests rely on it, and the body carries the same explanation either way.
+
+## POST /api/predict/visualize
+
+The same inference as `POST /api/scan`, returned as a **PNG** instead of JSON: one box per
+detected pill, in a colour derived from its class id (so one product always gets one
+colour), captioned with the most probable product and its probability, and "(to confirm)"
+when the score is under `confirm_threshold`. A banner gives the pill count and the
+inference time, which are also in the `X-Pills` and `X-Inference-Ms` headers.
+
+Same upload rules and same errors as `/api/scan` (413, 415, 503), same activity log entry.
+Drawing is `backend/app/annotate.py`, pure OpenCV.
+
+## GET /api/model/metadata
+
+What is actually being served, for the demo and for the model card:
+
+- `models`: one entry per task (`detect`, `classify`) with the **architecture read from the
+  ONNX metadata** (`YOLO11n`, `YOLO11s-cls`), the exporting Ultralytics version, the input
+  and output tensor shapes, the number of classes, the MLflow registered model, version and
+  run id, the `training` settings and the `validation_metrics` of that run;
+- `classes`: the 150 class ids with their names, from the medicine tables (empty names when
+  the tables are not loaded, rather than a 503);
+- `end_to_end`: the whole chain measured on the 600 test photos;
+- `confirm_threshold`, `providers` (what ONNX Runtime can use here, and `gpu`), `pipeline`,
+  `disclaimer`.
+
+The metrics live in `backend/app/model_card.py`, **keyed by MLflow run id**: publishing a
+model version that is not in that table returns `validation_metrics: {}` instead of the
+previous run's numbers. 503 when the ONNX files are not in the model directory.
+
+## GET /api/health
+
+Public, always 200 while the process is alive, so it stays usable as a container health
+check: `status`, `api_version`, `gpu`, `providers`, `models_loaded`, `models` (per task:
+file, `present`, registered model, version, run id) and `models_published_at`. It reads
+`models.json` and the directory listing only — asking for health never loads the 33 MB of
+weights, and missing files are reported as `present: false`, not as an error.
+
 ## GET /api/pills?q=&limit=
 
 Search the 150 identification classes (name, generic name, imprint, maker, ingredient;
