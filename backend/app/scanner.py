@@ -162,6 +162,28 @@ def available_providers(choice: str) -> list[str]:
     return ["CPUExecutionProvider"]
 
 
+# Execution providers that run on a GPU; `GET /api/health` reports whether one is there.
+GPU_PROVIDERS = frozenset(
+    {
+        "CUDAExecutionProvider",
+        "TensorrtExecutionProvider",
+        "DmlExecutionProvider",
+        "ROCMExecutionProvider",
+        "MIGraphXExecutionProvider",
+        "CoreMLExecutionProvider",
+    }
+)
+
+
+def installed_providers() -> list[str]:
+    """Every execution provider this onnxruntime build offers on this machine."""
+    return list(ort.get_available_providers())
+
+
+def has_gpu() -> bool:
+    return bool(GPU_PROVIDERS.intersection(installed_providers()))
+
+
 class PillScanner:
     def __init__(
         self,
@@ -176,6 +198,8 @@ class PillScanner:
     ) -> None:
         self.detector, self.classifier = detector, classifier
         det_meta, cls_meta = _metadata(detector), _metadata(classifier)
+        # Kept for GET /api/model/metadata: architecture, exporter version, class names.
+        self.det_meta, self.cls_meta = det_meta, cls_meta
         self.det_size = _square_input(detector, det_meta)
         self.cls_size = _square_input(classifier, cls_meta)
         names = cls_meta.get("names") or {}
@@ -271,6 +295,46 @@ class ScannerHolder:
         self.directory, self.providers, self.options = directory, providers, options
         self._scanner: PillScanner | None = None
         self._lock = threading.Lock()
+
+    @property
+    def loaded(self) -> bool:
+        """True once the ONNX sessions are in memory. Reading it loads nothing."""
+        return self._scanner is not None
+
+    def manifest(self) -> dict[str, Any]:
+        """`models.json` as published, or {} when it is missing or unreadable."""
+        path = self.directory / MANIFEST_FILE
+        if not path.is_file():
+            return {}
+        try:
+            data = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    @property
+    def published_at(self) -> str | None:
+        stamp = self.manifest().get("published_at")
+        return str(stamp) if stamp else None
+
+    def describe(self) -> dict[str, dict[str, Any]]:
+        """Per task, which file is expected, whether it is there and where it came from.
+
+        Reads only `models.json` and the directory listing, so a health check never loads
+        the weights.
+        """
+        manifest = self.manifest()
+        report: dict[str, dict[str, Any]] = {}
+        for task, filename in (("detect", DETECTOR_FILE), ("classify", CLASSIFIER_FILE)):
+            origin = manifest.get(task) or {}
+            report[task] = {
+                "file": filename,
+                "present": (self.directory / filename).is_file(),
+                "registered_model": origin.get("registered_model"),
+                "version": origin.get("version"),
+                "run_id": origin.get("run_id"),
+            }
+        return report
 
     def get(self) -> PillScanner:
         with self._lock:

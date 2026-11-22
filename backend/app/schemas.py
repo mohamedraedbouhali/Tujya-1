@@ -273,6 +273,75 @@ class ScanResult(BaseModel):
     disclaimer: str
 
 
+class ProvidersInfo(BaseModel):
+    """What ONNX Runtime can run on, on the machine serving the API."""
+
+    available: list[str] = Field(description="Execution providers ONNX Runtime was built with")
+    requested: str = Field(description="`SYNERGYRX_ONNX_PROVIDERS`: cpu, cuda, dml or auto")
+    gpu: bool = Field(description="True when a GPU execution provider is available")
+
+
+class ServedModel(BaseModel):
+    """One ONNX file in the model directory and where it came from."""
+
+    file: str
+    present: bool
+    registered_model: str | None = None
+    version: int | None = None
+    run_id: str | None = None
+
+
+class HealthStatus(BaseModel):
+    """`GET /api/health`: the server, the hardware and the models it would serve."""
+
+    status: Literal["ok"]
+    api_version: str
+    gpu: bool = Field(description="A GPU execution provider is available to ONNX Runtime")
+    providers: ProvidersInfo
+    models_loaded: bool = Field(description="The ONNX sessions are already in memory")
+    models: dict[str, ServedModel] = Field(description="Keyed by task: detect, classify")
+    models_published_at: str | None = None
+
+
+class ClassEntry(BaseModel):
+    class_id: int
+    name: str = ""
+    generic_name: str = ""
+
+
+class VisionModelCard(BaseModel):
+    """One of the two served models, as `GET /api/model/metadata` describes it."""
+
+    task: Literal["detect", "classify"]
+    registered_model: str | None = None
+    version: int | None = None
+    run_id: str | None = None
+    architecture: str = Field(description="Read from the ONNX metadata, e.g. YOLO11s-cls")
+    framework: str = "ONNX Runtime"
+    exported_by: str = Field(default="", description="Ultralytics version that wrote the file")
+    input_shape: list[int] = Field(description="N, C, H, W of the ONNX input tensor")
+    output_shape: list[int]
+    n_classes: int
+    validation_metrics: dict[str, float] = Field(
+        default_factory=dict,
+        description="Test scores of this exact MLflow run; empty if the run is unknown",
+    )
+    training: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelMetadata(BaseModel):
+    """`GET /api/model/metadata`: the characteristics of the deployed vision pipeline."""
+
+    pipeline: str
+    models: list[VisionModelCard]
+    n_classes: int
+    classes: list[ClassEntry]
+    confirm_threshold: float = Field(description="Below this top-1 probability, the app asks")
+    end_to_end: dict[str, Any]
+    providers: ProvidersInfo
+    disclaimer: str
+
+
 class InteractionsIn(BaseModel):
     """At least two things to compare, pill classes (from a scan) and/or ingredient names."""
 

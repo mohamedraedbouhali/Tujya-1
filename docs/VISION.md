@@ -63,6 +63,22 @@ counts, per-epoch metrics (from Ultralytics' `results.csv`), test metrics, plots
 and registers the ONNX model as a new version of `tujya-pill-classifier` or
 `tujya-pill-detector`.
 
+The version that `models/` serves is marked in the registry, so the deployed model is
+visible from the MLflow UI alone: stage **Production** and alias **`@production`** (MLflow
+3 shows the alias, the stage is kept for the older view). Set after publishing:
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000   # PowerShell: $env:MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+python - <<'EOF'
+from mlflow import MlflowClient
+client = MlflowClient()
+for name in ("tujya-pill-detector", "tujya-pill-classifier", "tujya-tox21"):
+    version = max(client.search_model_versions(f"name='{name}'"), key=lambda v: int(v.version))
+    client.transition_model_version_stage(name, version.version, "Production")
+    client.set_registered_model_alias(name, "production", version.version)
+EOF
+```
+
 ## Auto-labelling result (2026-10-28)
 
 | | Photos |

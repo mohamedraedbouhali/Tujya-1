@@ -130,4 +130,11 @@ def test_change_own_password(user: TestClient, browser: Callable[[], TestClient]
 def test_anonymous_access_is_refused(anonymous: TestClient) -> None:
     for path in ("/api/auth/me", "/api/admin/users", "/api/admin/stats", "/api/catalog/drugs"):
         assert anonymous.get(path).status_code == 401, path
-    assert anonymous.get("/api/health").json() == {"status": "ok"}
+    # Health stays public, and reports the hardware and the served models (course §5.1).
+    health = anonymous.get("/api/health")
+    assert health.status_code == 200
+    body = health.json()
+    assert body["status"] == "ok"
+    assert body["gpu"] is False or body["gpu"] is True
+    assert set(body["models"]) == {"detect", "classify"}
+    assert body["models_loaded"] is False  # reading health must not load the weights
